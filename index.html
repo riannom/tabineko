@@ -102,6 +102,7 @@
       v[14 + 3 * k] = M[0] - ball[0]; v[15 + 3 * k] = M[1] - ball[1]; v[16 + 3 * k] = w[2]; v[30 + k] = w[3];
     }
     var TU = function (b) { return [PI + b, 0.06, 0.12, 0.24, 0.38, 0.5]; };   // tail up, tip curled over
+    var TL = function (b) { return [PI - 0.3 + 0.3 * b, 0.03, 0.05, 0.08, 0.12, 0.18]; };   // tail kept low behind (pin, grab)
     // ---- keyframe curves: piecewise cubic Hermite through [t, values...] keys (Catmull-Rom tangents) ----
     function herm(K2, t, m0, m1) {
       var n = K2.length, i = 0, j, r = [];
@@ -159,6 +160,10 @@
     function gait(phi, G, stride, kind, carry) {
       var b = cyc(G.body, phi), L = [legAt(G.fore, phi, stride, 0, 0), legAt(G.hind, phi, stride, 0, 0),
               legAt(G.fore, phi, stride, G.far[0], G.far[1]), legAt(G.hind, phi, stride, G.far[2], G.far[3])], i, T = phi * 2 * PI;
+      if (kind === "bound") {   // far hind tucks its foot up into the belly's shadow while it swings (no nubs below the belly line)
+        var u3 = ((phi - G.hind.td - G.far[2]) % 1 + 1) % 1;
+        if (u3 > G.hind.d) L[3][1] -= 2.6 * Math.sin(PI * (u3 - G.hind.d) / (1 - G.hind.d));
+      }
       var v = [b[0], b[1], b[2], b[3], b[4], 0.2 + 0.9 * (L[0][4] + L[2][4]), -1, 0];
       if (kind === "creep") {   // the supporting shoulder blade rides up above the back line, one side then the other
         var bn = ((phi - G.fore.td) % 1 + 1) % 1, bf = ((phi - G.fore.td - G.far[0]) % 1 + 1) % 1;
@@ -232,16 +237,16 @@
                       W: { 2: [56, 0.95, 0.6, 0.15] }, t: [PI - 0.05, 0.05, 0.08, 0.12, 0.16, 0.2] }),
       landCP: P({ h: [-10.2, -11.6], s: [7.0, -10.6], arch: 1.4, scap: 1.0, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-8.4, -1.0, 0.8], hf: [-9.8, -0.8, 0.8], pl: [1, 0, 1, 0],
                       toe: [-0.4, 0.4, -0.2, 0.4], t: [PI + 0.15, 0.06, 0.1, 0.16, 0.24, 0.3] }),
-      landHP: P({ h: [-10.0, -10.8], s: [6.6, -10.8], arch: 1.3, scap: 1.0, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 0.95], hf: [-7.0, 0, 0.95], toe: [-0.4, 0, -0.2, 0], t: TU(0.35) }),
+      landHP: P({ h: [-10.0, -10.8], s: [6.6, -10.8], arch: 1.3, scap: 1.0, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 0.95], hf: [-7.0, 0, 0.95], toe: [-0.4, 0, -0.2, 0], t: TL(0.35) }),
       // pin: the foreleg reaches out onto the ball (weight on it), head lowered over it
-      pin: P({ h: [-10.2, -10.6], s: [6.2, -11.0], arch: 1.2, scap: 1.1, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 1.0], hf: [-7.0, 0, 1.0], toe: [-0.4, 0, -0.2, 0], t: TU(0.4) }),
-      pinB: P({ h: [-10.0, -10.4], s: [6.6, -10.8], arch: 1.3, scap: 1.2, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 1.0], hf: [-7.0, 0, 1.0], toe: [-0.6, 0, -0.3, 0], t: TU(0.45) }),
+      pin: P({ h: [-10.2, -10.6], s: [6.2, -11.0], arch: 1.2, scap: 1.1, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 1.0], hf: [-7.0, 0, 1.0], toe: [-0.4, 0, -0.2, 0], t: TL(0.4) }),
+      pinB: P({ h: [-10.0, -10.4], s: [6.6, -10.8], arch: 1.3, scap: 1.2, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 1.0], hf: [-7.0, 0, 1.0], toe: [-0.6, 0, -0.3, 0], t: TL(0.45) }),
       // paws come off the ball and set down just behind it; the body shifts forward over them
-      release: P({ h: [-7.8, -10.6], s: [9.6, -11.4], arch: 1.3, scap: 1.0, neck: -0.2, head: 0.8, fl: [12.4, 0, 0.5], ff: [11.2, 0, 0.5], hl: [-5.6, 0, 1.05], hf: [-7.0, 0, 1.05], t: TU(0.6) }),
-      dip: P({ h: [-7.0, -10.6], s: [11.0, -11.6], arch: 1.2, scap: 1.1, neck: 0.3, head: 0.6, fl: [12.4, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.6, 0, 1.1], hf: [-7.0, 0, 1.1], t: TU(0.7) }),
-      bite: P({ h: [-6.8, -10.6], s: [11.4, -11.6], arch: 1.2, scap: 1.1, neck: 0.3, head: 0.6, fl: [12.4, 0, 0.4], ff: [11.2, 0, 0.4], hl: [-5.6, 0, 1.12], hf: [-7.0, 0, 1.12], t: TU(0.75) }),
-      lift: P({ h: [-7.0, -11.4], s: [10.6, -13.0], arch: 0.9, scap: 0.8, neck: -0.6, head: 0.6, fl: [12.4, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.6, 0, 1.15], hf: [-7.0, 0, 1.15], t: TU(0.85) }),
-      toss: P({ h: [-7.4, -12.6], s: [9.8, -14.2], arch: 0.6, scap: 0.6, neck: -1.0, head: 0.6, fl: [12.6, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.4, 0, 1.2], hf: [-6.8, 0, 1.2], t: TU(0.95) }),
+      release: P({ h: [-7.8, -10.6], s: [9.6, -11.4], arch: 1.3, scap: 1.0, neck: -0.2, head: 0.8, fl: [12.4, 0, 0.5], ff: [11.2, 0, 0.5], hl: [-5.6, 0, 1.05], hf: [-7.0, 0, 1.05], t: TL(0.6) }),
+      dip: P({ h: [-7.0, -10.6], s: [11.0, -11.6], arch: 1.2, scap: 1.1, neck: 0.3, head: 0.6, fl: [12.4, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.6, 0, 1.1], hf: [-7.0, 0, 1.1], t: TL(0.7) }),
+      bite: P({ h: [-6.8, -10.6], s: [11.4, -11.6], arch: 1.2, scap: 1.1, neck: 0.3, head: 0.6, fl: [12.4, 0, 0.4], ff: [11.2, 0, 0.4], hl: [-5.6, 0, 1.12], hf: [-7.0, 0, 1.12], t: TL(0.75) }),
+      lift: P({ h: [-7.0, -11.4], s: [10.6, -13.0], arch: 0.9, scap: 0.8, neck: -0.6, head: 0.6, fl: [12.4, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.6, 0, 1.15], hf: [-7.0, 0, 1.15], t: TL(0.85) }),
+      toss: P({ h: [-7.4, -12.6], s: [9.8, -14.2], arch: 0.6, scap: 0.6, neck: -1.0, head: 0.6, fl: [12.6, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.4, 0, 1.2], hf: [-6.8, 0, 1.2], t: TL(0.95) }),
       carry: P({ h: [-8.6, -14.0], s: [9.2, -14.6], arch: 0.6, scap: 0.4, neck: -1.0, head: 0.6, fl: [13.0, 0, 0.45], ff: [11.4, 0, 0.45], hl: [-3.8, 0, 0.95], hf: [-5.2, 0, 0.95], t: [PI + 1.0, -0.1, -0.02, 0.08, 0.16, 0.24] })
     };
     // where the head goes in the grab (centre x, y, absolute head angle): over the ball, down to it, up with it
@@ -249,7 +254,7 @@
      ["release", 14.2, -12.4, 0.62], ["dip", 15.8, -10.0, 0.7], ["bite", 16.35, -8.62, 0.75], ["lift", 14.6, -13.4, 0.4], ["toss", 13.6, -16.4, -0.18], ["carry", 12.0, -18.7, -0.06]].forEach(function (q) { headAt(poses[q[0]], q[1], q[2], q[3]); });
     // the ball held in the mouth: its centre sits just past the front teeth, along the gape (head-local), radius rr
     function hold(v, rr) {
-      var at = spine(v), nb = neckBase(at), ha = v[6] + v[7], p = rot((1.6 + 0.6 * rr) * 1.08, (2.3 + 0.4 * rr) * 1.08, ha);   // behind the lip and canine line
+      var at = spine(v), nb = neckBase(at), ha = v[6] + v[7], p = rot((1.6 + 0.6 * rr) * 1.08, (2.1 + 0.4 * rr) * 1.08, ha);   // behind the lip and canine line
       return [nb[0] + Math.cos(v[6]) * v[34] + p[0], nb[1] + Math.sin(v[6]) * v[34] + p[1], ha];
     }
     function lerpV(a, b, t) { var r = new Array(a.length); for (var i = 0; i < a.length; i++) r[i] = a[i] + (b[i] - a[i]) * t; return r; }
@@ -301,10 +306,12 @@
     function solve(v) {
       var at = spine(v), r = roots(at);
       var g = function (k) { return Math.min(v[15 + 3 * k], -drop(v[16 + 3 * k], !(k & 1), v[30 + k])); };   // never below the ground
-      return [leg(r.nf, [v[14], g(0)], v[16], v[30], FL1, FL2, FP, true, [-0.25, -1.25]),
-              leg(r.nh, [v[17], g(1)], v[19], v[31], HL1, HL2, HM, false, [-0.35, -1.25]),
-              leg(r.ff, [v[20], g(2)], v[22], v[32], FL1, FL2, FP, true, [-0.25, -1.25]),
-              leg(r.fh, [v[23], g(3)], v[25], v[33], HL1, HL2, HM, false, [-0.35, -1.25])];
+      var A = [[r.nf, FL1, FL2, FP, true, [-0.25, -1.25]], [r.nh, HL1, HL2, HM, false, [-0.35, -1.25]], [r.ff, FL1, FL2, FP, true, [-0.25, -1.25]], [r.fh, HL1, HL2, HM, false, [-0.35, -1.25]]];
+      return A.map(function (q, k) {
+        var y = g(k), L = leg(q[0], [v[14 + 3 * k], y], v[16 + 3 * k], v[30 + k], q[1], q[2], q[3], q[4], q[5]);
+        var up = Math.max(L.W[1] + 1.1, L.M[1] + 1.0);   // a folded wrist or hock never dips through the ground either
+        return up > 0 ? leg(q[0], [v[14 + 3 * k], y - up], v[16 + 3 * k], v[30 + k], q[1], q[2], q[3], q[4], q[5]) : L;
+      });
     }
     // ---- drawing: everything is filled opaque into one path set (the caller composites it at one opacity) ----
     function spline(c, p) {   // closed Catmull-Rom spline through p
@@ -341,7 +348,7 @@
     function drawHind(c, L, k) {   // thigh (haunch), stifle, calf, hock with its heel point, long foot, paw
       var ux = L.W[0] - L.E[0], uy = L.W[1] - L.E[1], ul = Math.sqrt(ux * ux + uy * uy) || 1;
       var heel = [L.W[0] + ux / ul * 0.35, L.W[1] + uy / ul * 0.35];
-      chain(c, [L.R, mid(L.R, L.E, 0.5), L.E, mid(L.E, L.W, 0.4), L.W, L.M], [4.4 * k, 3.3 * k, 2.3 * k, 1.75 * k, 1.08 * k, 0.92 * k]);   // tapering thigh, no ball at the hip
+      chain(c, [L.R, mid(L.R, L.E, 0.5), L.E, mid(L.E, L.W, 0.4), L.W, L.M], [4.7 * k, (k < 1 ? 3.2 : 4.0) * k, (k < 1 ? 1.75 : 2.75) * k, 1.6 * k, 1.08 * k, 0.92 * k]);   // far side: slimmer stifle stays tucked under the belly   // a full thigh tapering to the stifle, blending into the haunch
       cap(c, L.W, 1.1 * k, heel, 0.85 * k);
       paw(c, L, PAW[1], k);
     }
@@ -438,7 +445,7 @@
     }
     function lip(v) {   // upper lip / snout region in front of the eye, above the gape (local coords)
       var at = spine(v), nb = neckBase(at), hx = nb[0] + Math.cos(v[6]) * v[34], hy = nb[1] + Math.sin(v[6]) * v[34], ha = v[6] + v[7];
-      return [[0.6, 0.0], [3.6, -0.9], [5.4, 0.2], [5.6, 1.7], [4.6, 2.45], [2.6, 2.6], [0.8, 2.5]].map(function (q) { var p = rot(q[0] * 1.08, q[1] * 1.08, ha); return [hx + p[0], hy + p[1]]; });
+      return [[0.6, 0.0], [3.6, -0.9], [5.4, 0.2], [5.6, 1.7], [4.9, 2.7], [3.6, 3.05], [2.2, 3.2], [0.8, 3.0]].map(function (q) { var p = rot(q[0] * 1.08, q[1] * 1.08, ha); return [hx + p[0], hy + p[1]]; });
     }
     function contacts(v) { return solve(v).map(function (L) { return L.C; }); }
     function head(v) { var at = spine(v), nb = neckBase(at); return [nb[0] + Math.cos(v[6]) * v[34], nb[1] + Math.sin(v[6]) * v[34]]; }
@@ -483,7 +490,7 @@
   // rebound), then a roll that slows under rolling friction to a stop. Fixed 4 ms steps, so a dry run at the start
   // tells the cat exactly where it will stop. Coordinates: x along the cat's travel, h = height of the ball's bottom.
   var YG = 0.0017, YH = 4;
-  function yarnNew(R, vx) { return { x: W + R.r + 2, h: 14 * R.s, vx: -vx, vy: 0.02, roll: false, stop: false, sq: 0, sqv: 0, t: 0 }; }
+  function yarnNew(R, vx) { return { x: W + R.r + 2, h: 2.4 * R.r, vx: -vx, vy: -0.02, roll: false, stop: false, sq: 0, sqv: 0, t: 0, c0: 0.000075 * R.s, c1: 0.0031 * R.s }; }
   function yarnStep(Y) {
     var h = YH;
     if (Y.stop) return;
@@ -491,18 +498,18 @@
     if (!Y.roll) {
       Y.vy -= YG * h; Y.h += Y.vy * h;
       if (Y.h <= 0) {   // contact: soft yarn squashes and gives back little
-        var imp = -Y.vy; Y.h = 0; Y.sqv += imp * 0.026; Y.vx *= 0.9;
-        if (imp * 0.4 < 0.02) { Y.roll = true; Y.vy = 0; } else Y.vy = imp * 0.4;
+        var imp = -Y.vy; Y.h = 0; Y.sqv += imp * 0.026; Y.vx *= 0.9; Y.hit = (Y.hit || 0) + 1;
+        if (imp * 0.52 < 0.035) { Y.roll = true; Y.vy = 0; } else Y.vy = imp * 0.52;   // rebounds to ~30%, then ~10% of its diameter
       }
     } else {
-      var dec = (0.00024 + 0.0001 * Math.abs(Y.vx)) * h;   // rolling resistance, mostly constant
+      var dec = (Y.c0 + Y.c1 * Math.abs(Y.vx)) * h;   // soft yarn: strong rolling resistance, easing to a stop over ~2 diameters
       if (Math.abs(Y.vx) <= dec) { Y.vx = 0; Y.stop = true; } else Y.vx += Y.vx > 0 ? -dec : dec;
     }
     Y.x += Y.vx * h;
     var w = 0.05; Y.sqv += (-w * w * Y.sq - 2 * 0.6 * w * Y.sqv) * h; Y.sq += Y.sqv * h;
   }
   function yarnPlan(R, target) {   // pick the throw speed so it comes to rest at the target; returns stop x and time
-    var lo = 0.05, hi = 0.8, Y;
+    var lo = 0.05, hi = 2.0, Y;
     for (var it = 0; it < 14; it++) {
       var m = (lo + hi) / 2; Y = yarnNew(R, m);
       while (!Y.stop && Y.t < 8000) yarnStep(Y);
@@ -519,29 +526,43 @@
     var rx = R.r * (1 + sq) * (1 + lump), ry = R.r * (1 - sq) * (1 - lump);
     return { rx: rx, ry: ry, cy: R.g - R.yh - ry };
   }
-  function looseAt(R) { var b = ballShape(R); return [R.yx + b.rx * 0.8, b.cy + b.ry * 0.6]; }
-  function simLoose(R, dt) {
-    var s = R.s, gy = R.g - 0.6, a = looseAt(R), i, it, seg = 2.2 * s, N = R.ytail;
-    if (!N) { N = R.ytail = []; for (i = 1; i <= 8; i++) { var nx = a[0] + 0.6 * seg * i, ny = Math.min(gy, a[1] + 0.8 * seg * i); N.push({ x: nx, y: ny, px: nx - R.Y.vx * 6, py: ny }); } }   // hanging, trailing
-    var sub = Math.max(1, Math.ceil(dt / 9)), h = dt / sub, G = 0.0017 * h * h;
-    for (var j = 0; j < sub; j++) {
+  function looseAt(R) { var b = ballShape(R), th = R.rot + 0.6; return [R.yx + b.rx * Math.cos(th), b.cy + b.ry * Math.sin(th)]; }   // turns with the ball: the end winds over the top
+  function simLoose(R, dt) {   // where it touches the ball it is carried round with the surface, so the end winds over the top
+    var s = R.s, gy = R.g - 0.6, bs = ballShape(R), a = looseAt(R), i, it, j, seg = 2.2 * s, N = R.ytail, rc = R.r + 0.7;
+    if (!N) { N = R.ytail = []; for (i = 1; i <= 8; i++) { var nx = a[0] + 0.6 * seg * i, ny = Math.min(gy, a[1] + 0.8 * seg * i); N.push({ x: nx, y: ny, px: nx - R.Y.vx * 6, py: ny, c: false }); } }   // hanging, trailing
+    var lb = R.lb || [R.yx, bs.cy, R.rot, a[0], a[1]], sub = Math.max(1, Math.ceil(dt / 6)), h = dt / sub, G = 0.0017 * h * h;
+    var dth = (R.rot - lb[2]) / sub, dcx = (R.yx - lb[0]) / sub, dcy = (bs.cy - lb[1]) / sub, cs = Math.cos(dth), sn = Math.sin(dth);
+    for (j = 0; j < sub; j++) {
+      var f = (j + 1) / sub, cx = lerp(lb[0], R.yx, f), cy = lerp(lb[1], bs.cy, f), ax = lerp(lb[3], a[0], f), ay = lerp(lb[4], a[1], f);
       for (i = 0; i < N.length; i++) {
-        var q = N[i], vx = (q.x - q.px) * 0.985, vy = (q.y - q.py) * 0.985;
-        q.px = q.x; q.py = q.y; q.x += vx; q.y += vy + G;
-        if (q.y >= gy) { q.y = gy; q.py = gy; q.px = q.x - vx * 0.6; }
+        var q = N[i];
+        if (q.c) {   // stuck to the turning ball
+          var ex = q.x - (cx - dcx), ey = q.y - (cy - dcy);
+          q.px = q.x; q.py = q.y; q.x = cx + ex * cs - ey * sn; q.y = cy + ex * sn + ey * cs;
+        } else {
+          var vx = (q.x - q.px) * 0.97, vy = (q.y - q.py) * 0.97;
+          q.px = q.x; q.py = q.y; q.x += vx; q.y += vy + G;
+        }
+        if (q.y >= gy) { q.y = gy; q.py = gy; q.px = q.x - (q.x - q.px) * 0.5; }
       }
       for (it = 0; it < 8; it++) {
-        var p0 = { x: a[0], y: a[1] };
         for (i = 0; i < N.length; i++) {
-          var p1 = i ? N[i - 1] : p0, p2 = N[i], dx = p2.x - p1.x, dy = p2.y - p1.y, dd = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+          var p1 = i ? N[i - 1] : { x: ax, y: ay }, p2 = N[i], dx = p2.x - p1.x, dy = p2.y - p1.y, dd = Math.sqrt(dx * dx + dy * dy) || 1e-6;
           if (dd <= seg) continue;
           var c = (dd - seg) / dd, w1 = i ? 0.5 : 0, w2 = i ? 0.5 : 1;
           p1.x += dx * c * w1; p1.y += dy * c * w1; p2.x -= dx * c * w2; p2.y -= dy * c * w2;
         }
-        for (i = 0; i < N.length; i++) if (N[i].y > gy) N[i].y = gy;
+        for (i = 0; i < N.length; i++) {   // the strand lies over the ball, not through it
+          var q2 = N[i], ex2 = q2.x - cx, ey2 = q2.y - cy, el = Math.sqrt(ex2 * ex2 + ey2 * ey2);
+          if (el < rc && el > 1e-6) { q2.x = cx + ex2 * rc / el; q2.y = cy + ey2 * rc / el; }
+          if (q2.y > gy) q2.y = gy;
+          if (it === 7) q2.c = i < N.length - 3 && Math.abs(dth) > 1e-4 && el < rc + 0.25 && q2.y < gy - 0.1;   // the last bit of the end stays loose and flops   // touching a ball that is turning
+        }
       }
     }
+    R.lb = [R.yx, bs.cy, R.rot, a[0], a[1]];
   }
+
 
   function schedule(ms) { due = Date.now() + ms; clearTimeout(timer); if (!document.hidden) timer = setTimeout(begin, ms); }
 
@@ -557,12 +578,12 @@
     canvas.width = off.width = off2.width = Math.round(W * dpr); canvas.height = off.height = off2.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     var r = 3.2 * s, v0 = clamp(W / 4200, 0.18, 0.34);         // px per ms
-    var R0 = { r: r, s: s }, plan = yarnPlan(R0, W * (0.6 + Math.random() * 0.16)), stopX = plan.x;   // where the ball will really stop
+    var R0 = { r: r, s: s }, plan = yarnPlan(R0, W * (0.66 + Math.random() * 0.12)), stopX = plan.x;   // where the ball will really stop
     var vc = v0 * 1.15, landX = stopX - BXL * s, pStart = landX - PDIST * s, cStart = pStart - CD * s, stalkX = cStart - vc * 225;
-    var ballStart = 0, catStart = Math.max(350, plan.T + 150 - (stalkX + 60 * s) / vc);   // the ball comes first; the cat bounds in after it, reaching its stalk as (or after) the ball settles
+    var ballStart = 0, catStart = Math.max(0, plan.T + 150 - (stalkX + 60 * s) / vc);   // the ball comes first; the cat bounds in after it, reaching its stalk as (or after) the ball settles
     run = { s: s, r: r, g: H - 6, v0: v0, vt: 0.07 * s, vc: vc, stopX: stopX, landX: landX, pStart: pStart, cStart: cStart, stalkX: stalkX,
             catStart: catStart, ballStart: ballStart, Y: yarnNew(R0, plan.vx), acc4: 0, ytail: null,
-            t: 0, yx: W + 2 * r, yh: 14 * s, rot: 0, held: false, rr: r, bp: null, bv: [0, 0], rope: null, mouth: 0, cx: -60 * s, phi: 0, mode: "wait", mt: 0, cv: 0, dir: ltr ? 1 : -1,
+            t: 0, yx: W + r + 2, yh: 2.4 * r, rot: 0, held: false, rr: r, bp: null, bv: [0, 0], rope: null, mouth: 0, cx: -60 * s, phi: 0, mode: "wait", mt: 0, cv: 0, dir: ltr ? 1 : -1,
             feet: null, tail: null, pouch: 0, pv: 0, hip: null };
     ltr = !ltr;
     start();
@@ -573,9 +594,10 @@
     R.t += dt;
     // Yarn: fixed-step physics (the same as the dry run), rolling without skidding
     if (!R.held && R.t >= R.ballStart) {
-      var px = R.Y.x;
-      R.acc4 += dt; while (R.acc4 >= YH) { yarnStep(R.Y); R.acc4 -= YH; }
-      R.yx = R.Y.x; R.yh = R.Y.h; R.rot += (R.Y.x - px) / R.r;
+      var Y = R.Y, px = R.yx;
+      R.acc4 += dt; while (R.acc4 >= YH) { R.Yp = [Y.x, Y.h]; yarnStep(Y); R.acc4 -= YH; }
+      var al = R.acc4 / YH, Yp = R.Yp || [Y.x, Y.h];   // drawn between physics steps: smooth at any frame rate
+      R.yx = lerp(Yp[0], Y.x, al); R.yh = lerp(Yp[1], Y.h, al); R.rot += (R.yx - px) / R.r;   // rolls without slipping: turn = distance / radius
       simLoose(R, dt);
     }
     // Cat: bound -> brake into a stalking crouch -> wiggle -> pounce onto the ball -> grab it -> trot off with it. Always faces its travel direction.
@@ -650,7 +672,7 @@
       v = CAT.place(CAT.seq(POUNCE, t / PT), pLift(t), pPitch(t));
       var bL = (R.stopX - R.cx) / R.s, hc = CAT.head(v), h0 = CAT.head(PS.crouch), lv = smooth(t / 120) * (1 - smooth((t - 470) / 200));
       CAT.steady(v, lerp(hc[1], h0[1] - 0.8 * Math.sin(Math.PI * clamp((t - 200) / 400, 0, 1)), lv), hc[0]);   // the head stays low and level
-      var aim = clamp(Math.atan2(-3.2 - CAT.head(v)[1], bL - CAT.head(v)[0]) * 0.8, 0.05, 0.75);   // eyes on the ball
+      var aim = clamp(Math.atan2(-R.r / R.s - CAT.head(v)[1], bL - CAT.head(v)[0]) * 0.8, 0.05, 0.75);   // eyes on the ball
       v[7] = lerp(v[7], aim - v[6], smooth(t / 150));
       bL = (R.stopX - R.cx) / R.s;
       var a1 = smooth((t - 340) / 115), a2 = smooth((t - 400) / 115);
@@ -666,7 +688,7 @@
       var kn = 1 - smooth((t - 200) / 60);   // kneading: the toes tighten and relax on the ball
       v[30] -= 0.35 * Math.max(0, Math.sin(t * 0.035)) * kn; v[32] -= 0.35 * Math.max(0, Math.sin(t * 0.035 + 2.2)) * kn;
       var lash = 1 - 0.7 * smooth((t - 700) / 300);   // tail lashing, with tip flicks
-      v[8] += 0.28 * Math.sin(t * 0.011) * lash; v[11] += 0.25 * Math.sin(t * 0.02 + 1) * lash; v[12] += 0.35 * Math.sin(t * 0.03) * lash; v[13] += 0.5 * Math.sin(t * 0.045 + 0.5) * lash;
+      v[8] += 0.03 * Math.sin(t * 0.009) * lash; v[12] += 0.18 * Math.sin(t * 0.026) * lash; v[13] += 0.45 * Math.sin(t * 0.04 + 0.5) * lash;   // low tail, only the tip twitches
       return v;
     }
     if (m === "off") {
@@ -772,8 +794,13 @@
     if (m === "off") o.ear = Math.max(0, Math.sin(Math.PI * clamp(((t % 2300) - 1500) / 260, 0, 1)));   // an occasional ear flick
     if (!R.held && R.t >= R.ballStart) {   // head and eyes follow the ball as it comes in and settles
       var hd = CAT.head(v), ba = Math.atan2((-R.yh - R.r) / R.s - hd[1], (R.yx - R.cx) / R.s - hd[0]), cur = v[6] + v[7];
-      var turn = m === "pounce" ? 0 : clamp(0.5 * (ba - cur), -0.12, 0.35) * (m === "run" ? 0.6 : 1);
+      var turn = m === "pounce" ? 0 : clamp(0.6 * (ba - cur), -0.15, 0.35);
       v[7] += turn; o.look = ba - (cur + turn);
+      if (m === "run") {   // it has noticed the ball coming in: head comes up and round toward it while it rolls, then settles into the chase
+        if (R.Y.stop && R.stopT === undefined) R.stopT = R.t;
+        var al = smooth((R.cx + 20 * R.s) / (40 * R.s)) * (R.stopT === undefined ? 1 : 1 - smooth((R.t - R.stopT) / 500));
+        if (al > 0) { var h1 = CAT.head(v); CAT.steady(v, h1[1] - 2.0 * al, h1[0] + 0.6 * al); v[7] += 0.18 * al; o.look += 0.15 * al; o.ear = Math.max(o.ear, 0.5 * al); }
+      }
     }
     o.tilt = R.tilt || 0;
     return { v: v, o: o };
@@ -805,7 +832,7 @@
       var T0 = R.ytail || [{ x: a[0] + 16 * s, y: gy }], N = [{ x: a[0], y: a[1], px: a[0], py: a[1] }], RL = [], d = 0;
       for (i = 0; i < T0.length; i++) { N.push({ x: T0[i].x, y: T0[i].y, px: T0[i].x, py: T0[i].y }); var l = Math.max(1, Math.hypot(N[i + 1].x - N[i].x, N[i + 1].y - N[i].y)); RL.push(l); d += l; }
       var e = [N[N.length - 1].x, gy];
-      P = R.rope = { N: N, RL: RL, seg: 3 * s, paid0: d, Lmax: Math.max(d + 20 * s, 52 * s), pinned: true, end: e, minx: e[0] };
+      P = R.rope = { N: N, RL: RL, seg: 3 * s, paid0: d, Lmax: Math.max(d + 20 * s, 52 * s), Lmax2: Math.max(d + 20 * s, 52 * s) + 16 * s, pinned: true, end: e, minx: e[0] };
     }
     var N = P.N, RL = P.RL, sub = Math.max(1, Math.ceil(dt / 9)), h = dt / sub, G = 0.0017 * h * h;
     for (j = 0; j < sub; j++) {
@@ -813,12 +840,13 @@
       for (i = 1; i < N.length; i++) {
         var q = N[i], vx = (q.x - q.px) * 0.99, vy = (q.y - q.py) * 0.99;
         q.px = q.x; q.py = q.y; q.x += vx; q.y += vy + G;
-        if (q.y >= gy) { q.y = gy; q.py = gy; q.px = q.x - vx * 0.7; }   // lying on the ground: friction
+        if (q.y >= gy) { q.y = gy; q.py = gy; q.px = q.x - vx * (P.pinned ? 0.7 : 0.45); }   // lying on the ground: friction (more grip when dragged)
       }
-      if (P.pinned && (R.mode === "off" || R.mt > BITE + 60)) {   // pays out from the ball when pulled, keeping a natural sag
+      if ((P.pinned || (P.paid || 0) < P.Lmax2) && (R.mode === "off" || R.mt > BITE + 60)) {   // pays out from the ball when pulled, keeping a natural sag; still a little while it is dragged
         var d0 = Math.hypot(N[1].x - N[0].x, N[1].y - N[0].y), td = 1;
         while (td < N.length - 1 && N[td].y < gy - 0.05) td++;
         var ratio = (N[0].x - N[td].x) / Math.max(gy - N[0].y, 1), kf = clamp(0.35 + 0.8 * (ratio - 1.6), 0.02, 0.95);
+        if (!P.pinned) kf *= 0.3 * (1 - smooth(((P.paid || 0) - P.Lmax) / (P.Lmax2 - P.Lmax)));   // tapering off, not an abrupt stop
         if (d0 > RL[0]) RL[0] += (d0 - RL[0]) * kf * 1.1;
         while (RL[0] > P.seg * 1.6) {
           var b = N[1], f = P.seg / Math.max(d0, 1e-3), nx = b.x + (N[0].x - b.x) * f, ny = b.y + (N[0].y - b.y) * f;
@@ -826,7 +854,7 @@
           d0 = Math.hypot(N[1].x - N[0].x, N[1].y - N[0].y);
         }
         var L = 0; for (i = 0; i < RL.length; i++) L += RL[i];
-        if (L >= P.Lmax) { RL[0] = Math.max(0.5, RL[0] - (L - P.Lmax)) + 4 * s; P.pinned = false; P.unT = R.t; P.ep = [N[N.length - 1].x, N[N.length - 1].y]; }   // a little slack as it lets go
+        if (P.pinned && L >= P.Lmax) { RL[0] = Math.max(0.5, RL[0] - (L - P.Lmax)) + 4 * s; P.pinned = false; P.unT = R.t; P.ep = [N[N.length - 1].x, N[N.length - 1].y]; }   // a little slack as it lets go
         P.paid = L;
       }
       var last = N.length - 1;
@@ -835,7 +863,7 @@
         for (i = 0; i < last; i++) {   // a rope only resists stretching
           var p1 = N[i], p2 = N[i + 1], dx = p2.x - p1.x, dy = p2.y - p1.y, dd = Math.sqrt(dx * dx + dy * dy) || 1e-6;
           if (dd <= RL[i]) continue;
-          var c = (dd - RL[i]) / dd, w1 = i === 0 ? 0 : 0.5, w2 = i === 0 ? 1 : 0.5;
+          var c = (dd - RL[i]) / dd * (P.pinned ? 1 : 0.3), w1 = i === 0 ? 0 : 0.5, w2 = i === 0 ? 1 : 0.5;   // dragged: a little stretch before it slides
           if (i + 1 === last && P.pinned) { w1 = i === 0 ? 0 : 1; w2 = 0; }
           p1.x += dx * c * w1; p1.y += dy * c * w1; p2.x -= dx * c * w2; p2.y -= dy * c * w2;
         }
@@ -849,7 +877,8 @@
     }
     P.minx = Infinity; for (i = 0; i < N.length; i++) P.minx = Math.min(P.minx, N[i].x);
     var en = N[N.length - 1]; P.ev = P.ev === undefined ? 0 : P.ev + (Math.abs(en.x - en.px) / Math.max(dt / sub, 1) - P.ev) * 0.2;
-    R.rr = R.r * (1 - 0.22 * clamp(((P.paid || P.paid0) - P.paid0) / (P.Lmax - P.paid0), 0, 1));
+    var sq = R.mode === "off" ? 1 : smooth((R.mt - BITE) / 160);   // soft yarn gives a little in the jaws
+    R.rr = R.r * (1 - 0.1 * sq - 0.2 * clamp(((P.paid || P.paid0) - P.paid0) / (P.Lmax2 - P.paid0), 0, 1));
     R.rot = R.ha + ((P.paid || 0) - P.paid0) / R.r * 0.25;
   }
 
@@ -871,11 +900,12 @@
     }
     // before the grab: the short loose end flopping behind the ball
     if (!R.ytail) return;
+    var bs0 = ballShape(R); ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.ellipse(X(R.yx), bs0.cy, bs0.rx + 0.2, bs0.ry + 0.2, 0, 0, TAU); ctx.clip("evenodd"); strandStyle(); ctx.beginPath();
     var a = looseAt(R), Q = [[X(a[0]), a[1]]].concat(R.ytail.map(function (q) { return [X(q.x), q.y]; }));
     ctx.moveTo(Q[0][0], Q[0][1]);
     for (i = 1; i < Q.length - 1; i++) ctx.quadraticCurveTo(Q[i][0], Q[i][1], (Q[i][0] + Q[i + 1][0]) / 2, (Q[i][1] + Q[i + 1][1]) / 2);
     ctx.lineTo(Q[Q.length - 1][0], Q[Q.length - 1][1]);
-    ctx.stroke();
+    ctx.stroke(); ctx.restore();
   }
 
   function drawBall(R) {
