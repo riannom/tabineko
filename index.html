@@ -31,8 +31,10 @@
   @keyframes d3 { 0% { transform: translate(0,0) scale(.95); } 100% { transform: translate(-18vw,16vh) scale(1.1); } }
   @keyframes d4 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(16vw,-10vh) scale(1.15); } }
   .vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, transparent 38%, rgba(6,5,8,.62) 100%); }
-  /* Network layer (and the occasional faint trail of paw prints), drawn by the script below */
-  #net { position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+  /* Bottom strip where the occasional cat-and-yarn scene plays (drawn by the script below) */
+  #play { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 0; z-index: 1; pointer-events: none; }
+  /* Reduced motion: a very faint cat sitting by its yarn instead */
+  .still { display: none; position: fixed; right: 4vw; bottom: 16px; width: 54px; height: 30px; z-index: 1; color: var(--amber); opacity: .3; pointer-events: none; }
   main { position: relative; z-index: 2; min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem; padding: 6vmin 6vw; text-align: center; }
   h1 { margin: 0; font-weight: 300; letter-spacing: .01em; font-size: clamp(2.6rem, 11vw, 6.2rem); line-height: 1; position: relative; }
   h1 span { font-weight: 400; font-size: .42em; letter-spacing: .06em; margin-left: .12em;
@@ -40,13 +42,14 @@
   /* Tiny line-art cat sitting on the wordmark's shoulder */
   .cat { position: absolute; width: .3em; height: .3em; right: .02em; top: .06em; color: var(--amber); opacity: .55; }
   p { margin: 0; font-size: clamp(.95rem, 2.6vw, 1.1rem); letter-spacing: .03em; color: rgba(239,232,220,.66); }
-  @media (prefers-reduced-motion: reduce) { .blob { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .blob { animation: none; } .still { display: block; } }
 </style>
 </head>
 <body>
 <div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
 <div class="vignette" aria-hidden="true"></div>
-<canvas id="net" aria-hidden="true"></canvas>
+<canvas id="play" aria-hidden="true"></canvas>
+<svg class="still" viewBox="0 0 54 30" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13V7.5l2.4 2h3.2l2.4-2V13c0 1.6-.8 2.6-2 3.1 2.6.9 3.9 3.2 3.9 7.4H4.6c0-4.2 1.3-6.5 3.9-7.4-1.2-.5-2-1.5-2-3.1z"/><path d="M16.4 23.5c2.2 0 3.3-1.4 3-3.4"/><circle cx="40" cy="18.5" r="5"/><path d="M35.6 16.5c2.5 1.6 6.3 1.9 8.8 1M36.4 21c2.4-.4 5.3-2.6 6.6-5.6" stroke-width=".8"/><path d="M35.2 20.4c-3 2.2-6.5 3.6-11 3.1" stroke-width=".7" opacity=".6"/></svg>
 <main>
   <h1>tabineko<span>.dev</span><svg class="cat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 10V4.5l2.4 2h3.2l2.4-2V10c0 1.6-.8 2.6-2 3.1 2.6.9 3.9 3.2 3.9 7.4H5.6c0-4.2 1.3-6.5 3.9-7.4-1.2-.5-2-1.5-2-3.1z"/><path d="M17.4 20.5c2.2 0 3.3-1.4 3-3.4"/></svg></h1>
   <p>Something is taking shape.</p>
@@ -54,148 +57,193 @@
 <script>
 (function () {
   "use strict";
-  var canvas = document.getElementById("net");
+  // A rare scene along the bottom edge: a ball of yarn rolls in, a small line-art cat bounds after it,
+  // pounces, bats it on its way, and both leave the stage. Idle between runs (no animation loop).
+  var canvas = document.getElementById("play");
   var ctx = canvas.getContext && canvas.getContext("2d");
-  if (!ctx) return;
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var PAPER = [239, 232, 220], AMBER = [232, 168, 90], INDIGO = [150, 162, 230];
-  var nodes = [], pulses = [], W = 0, H = 0, dpr = 1, linkDist = 160, raf = 0, last = 0, clock = 0;
-  var trail = null, nextTrail = 9000 + Math.random() * 8000;
+  if (!ctx || reduce) return;
+  var TAU = Math.PI * 2;
+  var AMBER = "232,168,90", PAPER = "239,232,220";
+  var W = 0, H = 0, dpr = 1, raf = 0, last = 0, timer = 0, due = 0, run = null, ltr = Math.random() < 0.5;
 
-  function setup() {
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function ease(t) { return 1 - (1 - t) * (1 - t); }
+
+  function schedule(ms) { due = Date.now() + ms; clearTimeout(timer); if (!document.hidden) timer = setTimeout(begin, ms); }
+
+  function begin() {
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var tag = document.querySelector("main p").getBoundingClientRect();
+    var base = vw < 600 ? 0.86 : 1.25;
+    var s = Math.min(base, (vh - tag.bottom - 28) / 78);   // keep the whole scene below the text
+    if (s < 0.5) { schedule(40000 + Math.random() * 40000); return; }
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    W = window.innerWidth; H = window.innerHeight;
+    W = vw; H = Math.ceil(80 * s + 18);
+    canvas.style.height = H + "px";
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    linkDist = Math.max(120, Math.min(200, Math.sqrt(W * H) / 5.2));
-    // Node count scales with screen area: ~14 on a phone, capped at 44 on large screens
-    var target = Math.round(Math.max(14, Math.min(44, W * H / 30000)));
-    while (nodes.length < target) nodes.push(makeNode());
-    nodes.length = target;
-    nodes.forEach(function (n) { n.x = Math.min(n.x, W); n.y = Math.min(n.y, H); });
-  }
-  function makeNode() {
-    var a = Math.random() * Math.PI * 2, sp = 0.003 + Math.random() * 0.006;   // px per ms (very slow)
-    var r = Math.random();
-    return { x: Math.random() * W, y: Math.random() * H, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-             r: 1 + Math.random() * 1.2, c: r < 0.5 ? PAPER : r < 0.82 ? INDIGO : AMBER, ph: Math.random() * 6.28 };
-  }
-  function rgba(c, a) { return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a.toFixed(3) + ")"; }
-
-  // A faint trail of paw prints along a gentle curve, now and then (a cat on a journey)
-  function makeTrail() {
-    var top = Math.random() < 0.5, ltr = Math.random() < 0.5;
-    var y0 = H * (top ? 0.12 + Math.random() * 0.14 : 0.74 + Math.random() * 0.14);
-    var y3 = y0 + (Math.random() - 0.5) * H * 0.12;
-    var p0 = { x: ltr ? -20 : W + 20, y: y0 }, p3 = { x: ltr ? W + 20 : -20, y: y3 };
-    var p1 = { x: W * (ltr ? 0.33 : 0.67), y: y0 + (Math.random() - 0.5) * H * 0.18 };
-    var p2 = { x: W * (ltr ? 0.66 : 0.34), y: y3 + (Math.random() - 0.5) * H * 0.18 };
-    var prints = [], step = 26, len = 0, prev = bez(p0, p1, p2, p3, 0), side = 1;
-    for (var i = 1; i <= 400; i++) {
-      var t = i / 400, p = bez(p0, p1, p2, p3, t), d = Math.hypot(p.x - prev.x, p.y - prev.y);
-      len += d;
-      if (len >= step) {
-        len = 0;
-        var ang = Math.atan2(p.y - prev.y, p.x - prev.x);
-        prints.push({ x: p.x + Math.cos(ang + Math.PI / 2) * 5 * side, y: p.y + Math.sin(ang + Math.PI / 2) * 5 * side, a: ang });
-        side = -side;
-      }
-      prev = p;
-    }
-    return { prints: prints, t: 0, gap: 260 };   // a new print every 260 ms
-  }
-  function bez(a, b, c, d, t) {
-    var u = 1 - t;
-    return { x: u*u*u*a.x + 3*u*u*t*b.x + 3*u*t*t*c.x + t*t*t*d.x, y: u*u*u*a.y + 3*u*u*t*b.y + 3*u*t*t*c.y + t*t*t*d.y };
-  }
-  function drawPaw(x, y, ang, alpha) {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(ang + Math.PI / 2);
-    ctx.fillStyle = rgba(AMBER, alpha);
-    ctx.beginPath(); ctx.ellipse(0, 1.6, 2.2, 1.8, 0, 0, 6.2832); ctx.fill();
-    var toes = [[-2.4, -1.4], [-0.8, -2.8], [0.8, -2.8], [2.4, -1.4]];
-    for (var i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(toes[i][0], toes[i][1], 0.75, 0.95, 0, 0, 6.2832); ctx.fill(); }
-    ctx.restore();
+    var r = 7 * s, v0 = clamp(W / 4200, 0.18, 0.34);           // px per ms
+    var stopX = W * (0.6 + Math.random() * 0.16);
+    var T1 = 2 * (stopX + r) / v0;                             // yarn eases to a stop at stopX
+    var vc = v0 * 1.25, pounce = 74 * s;
+    var catStart = T1 + 250 - (stopX - r - 28 * s - pounce + 50 * s) / vc;
+    run = { s: s, r: r, g: H - 14, v0: v0, stopX: stopX, T1: T1, vc: vc, pounce: pounce, catStart: catStart,
+            t: 0, yx: -r, yv: v0, rot: 0, kicked: false, cx: -50 * s, phi: 0, mode: "wait", mt: 0, cv: 0, dir: ltr ? 1 : -1 };
+    ltr = !ltr;
+    start();
   }
 
   function step(dt) {
-    clock += dt;
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      n.x += n.vx * dt; n.y += n.vy * dt;
-      if (n.x < -20) n.x = W + 20; else if (n.x > W + 20) n.x = -20;
-      if (n.y < -20) n.y = H + 20; else if (n.y > H + 20) n.y = -20;
-      n.ph += dt * 0.0007;
+    var R = run, s = R.s;
+    R.t += dt;
+    // Yarn
+    var px = R.yx;
+    if (!R.kicked) { var u = Math.min(R.t / R.T1, 1); R.yx = -R.r + (R.stopX + R.r) * ease(u); }
+    else { R.yv = Math.max(R.yv * Math.pow(0.9995, dt), 0.2); R.yx += R.yv * dt; }
+    R.yspeed = (R.yx - px) / dt;
+    R.rot += (R.yx - px) / R.r;
+    // Cat
+    var landX = R.stopX - R.r - 28 * s, pStart = landX - R.pounce;
+    R.mt += dt;
+    if (R.mode === "wait" && R.t >= R.catStart) { R.mode = "run"; R.mt = 0; R.cv = R.vc; }
+    if (R.mode === "run") {
+      R.cx += R.vc * dt;
+      if (R.cx >= pStart) { R.cx = pStart; R.mode = "pounce"; R.mt = 0; }
+    } else if (R.mode === "pounce") {
+      var q = Math.min(R.mt / 640, 1);
+      R.cx = lerp(pStart, landX, q);
+      if (q >= 1) { R.mode = "bat"; R.mt = 0; }
+    } else if (R.mode === "bat") {
+      if (!R.kicked && R.mt > 190) { R.kicked = true; R.yv = R.v0 * 1.9; }
+      if (R.mt > 380) { R.mode = "watch"; R.mt = 0; }
+    } else if (R.mode === "watch") {
+      if (R.mt > 520) { R.mode = "off"; R.mt = 0; R.cv = 0; }
+    } else if (R.mode === "off") {
+      R.cv = Math.min(R.vc * 1.15, R.cv + dt * 0.0012); R.cx += R.cv * dt;
     }
-    if (pulses.length < 2 && Math.random() < dt / 3600) {
-      var a = nodes[(Math.random() * nodes.length) | 0], best = null, bd = linkDist;
-      for (var j = 0; j < nodes.length; j++) {
-        var b = nodes[j]; if (b === a) continue;
-        var dd = Math.hypot(a.x - b.x, a.y - b.y); if (dd < bd) { bd = dd; best = b; }
-      }
-      if (best) pulses.push({ a: a, b: best, t: 0 });
+    if (R.mode === "run" || R.mode === "off") R.phi += (R.mode === "run" ? R.vc : R.cv) * dt / (40 * s);
+    if (R.mode === "off" && R.cx > W + 60 * s && R.yx > W + 60 * s) { run = null; }
+  }
+
+  // ----- drawing -----
+  function X(x) { return run.dir > 0 ? x : W - x; }
+
+  function drawYarn(R) {
+    var s = R.s, x = X(R.yx), y = R.g - R.r, rot = R.rot * R.dir, back = -R.dir;
+    // loose thread trailing behind, wiggling while it rolls
+    var n = 16, len = 38 * s, wig = clamp(Math.abs(R.yspeed || 0) / R.v0, 0, 1.6) + 0.12, tt = R.t * 0.011;
+    ctx.strokeStyle = "rgba(" + PAPER + ",.34)"; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(x + back * R.r * 0.7, y + R.r * 0.55);
+    for (var i = 1; i <= n; i++) {
+      var f = i / n;
+      ctx.lineTo(x + back * (R.r * 0.7 + len * f), R.g - 0.6 - (1 - f) * R.r * 0.4 + Math.sin(tt - f * 7) * 2.6 * s * f * wig);
     }
-    for (var k = pulses.length - 1; k >= 0; k--) { pulses[k].t += dt / 2000; if (pulses[k].t >= 1) pulses.splice(k, 1); }
-    if (!trail && clock > nextTrail) trail = makeTrail();
-    if (trail) {
-      trail.t += dt;
-      if (trail.t > trail.prints.length * trail.gap + 5000) { trail = null; nextTrail = clock + 35000 + Math.random() * 30000; }
+    ctx.stroke();
+    ctx.lineWidth = 1.3; ctx.strokeStyle = "rgba(" + AMBER + ",.66)";
+    ctx.beginPath(); ctx.arc(x, y, R.r, 0, TAU); ctx.stroke();
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, R.r - 0.6, 0, TAU); ctx.clip();
+    ctx.lineWidth = 0.8; ctx.strokeStyle = "rgba(" + AMBER + ",.5)";
+    for (var k = 0; k < 3; k++) { ctx.beginPath(); ctx.ellipse(x, y, R.r * 1.02, R.r * 0.36, rot + k * 1.05, 0, TAU); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  // Cat in local units (faces +x, ground at y=0, ~40 units to the ear tips), scaled by s.
+  function pose(R) {
+    var m = R.mode, q, P = { e: 0, L: 0, phi: R.phi, raise: 0, tail: 0 };
+    if (m === "run" || m === "off") {
+      var e = (Math.cos(R.phi * TAU) + 1) / 2;
+      P.e = e; P.L = 1.4 + 3.6 * e * e; P.tail = 0.25;
+      if (m === "off" && R.mt < 300) { P.L *= R.mt / 300; }
+    } else if (m === "pounce") {
+      q = Math.min(R.mt / 640, 1);
+      P.L = 1 + 26 * 4 * q * (1 - q); P.e = q < 0.12 ? q / 0.12 : q > 0.82 ? 1 - (q - 0.82) / 0.18 : 1; P.tail = 0.6;
+    } else if (m === "bat") {
+      P.raise = Math.sin(Math.PI * Math.min(R.mt / 380, 1)); P.e = 0.15; P.L = 0.4; P.tail = 1;
+    } else { // watch, wait
+      P.e = 0.05; P.L = 0; P.tail = 1; P.flick = R.mt;
     }
+    return P;
+  }
+
+  function leg(bx, by, len, ang, bend, alpha) {
+    var px = bx + Math.sin(ang) * len, py = by + Math.cos(ang) * len;
+    var mx = (bx + px) / 2 + Math.cos(ang) * bend, my = (by + py) / 2 - Math.sin(ang) * bend;
+    ctx.strokeStyle = "rgba(" + AMBER + "," + alpha + ")";
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(mx, my, px, py); ctx.stroke();
+  }
+
+  function drawCat(R) {
+    if (R.mode === "wait") return;
+    var s = R.s, P = pose(R), e = P.e, L = P.L, A = 0.68, INK = "rgba(15,14,18,.9)";
+    ctx.save();
+    ctx.translate(X(R.cx), R.g); ctx.scale(s * R.dir, s);
+    ctx.lineWidth = 1.25 / s; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    var Hx = -15 - 3.5 * e, Hy = -18.5 - L + (1 - e) * 1.5, Sx = 12 + 3.5 * e, Sy = -20 - L;
+    var ph = P.phi * TAU, still = P.raise || R.mode !== "run" && R.mode !== "off";
+    function legE(off) { return still ? e : (Math.cos(ph + off) + 1) / 2; }
+    // tail: streams back while running, curls up when still
+    var w = Math.sin(ph + 1) * (1 - P.tail * 0.5) + (P.flick ? Math.sin(P.flick * 0.012) * 0.8 : 0), up = P.tail;
+    ctx.strokeStyle = "rgba(" + AMBER + "," + A + ")";
+    ctx.beginPath(); ctx.moveTo(Hx - 1, Hy + 2);
+    ctx.bezierCurveTo(Hx - 10, Hy + 1 + 3 * w, Hx - 16, Hy - 3 - 9 * up - 2 * w, Hx - 25 + 6 * up, Hy - 6 - 11 * up + 3.5 * w);
+    ctx.stroke();
+    // far-side legs (fainter, partly hidden by the body)
+    leg(Hx + 3, Hy + 6, 16, lerp(0.6, -1.05, legE(0.5)), 3.4, A * 0.45);
+    leg(Sx - 1, Sy + 7, 15, lerp(-0.4, 1.05, legE(0.45)), -2, A * 0.45);
+    // head position: carried low and forward while running
+    var hx = Sx + 8 + e, hy = Sy - 4.5 + Math.sin(ph) * 0.7 + (R.mode === "watch" ? 1.2 : 0) - (still ? 1.5 : 0);
+    // body silhouette with neck, tucked belly
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    ctx.moveTo(Hx, Hy);
+    ctx.quadraticCurveTo((Hx + Sx) / 2 - 2, -25.5 - L - (1 - e) * 5, Sx, Sy);
+    ctx.quadraticCurveTo(Sx + 2.5, Sy - 1.5, hx - 3.5, hy - 1.5);
+    ctx.lineTo(hx, hy + 3.5);
+    ctx.quadraticCurveTo(Sx + 5.5, Sy + 3, Sx + 3, Sy + 8.5);
+    ctx.quadraticCurveTo((Hx + Sx) / 2 + 3, Sy + 10 + e, Hx + 5, Hy + 7);
+    ctx.bezierCurveTo(Hx + 1.5, Hy + 8.5, Hx - 4.5, Hy + 5, Hx, Hy);
+    ctx.fill(); ctx.stroke();
+    // head: small, with a hint of muzzle and two fine ears
+    ctx.beginPath();
+    ctx.moveTo(hx - 3.8, hy - 2.2); ctx.lineTo(hx - 3, hy - 8.2); ctx.lineTo(hx - 0.4, hy - 4.2);
+    ctx.lineTo(hx + 1.6, hy - 4.2); ctx.lineTo(hx + 3.4, hy - 8.6); ctx.lineTo(hx + 4.4, hy - 2.6);
+    ctx.quadraticCurveTo(hx + 6.8, hy - 0.6, hx + 6.2, hy + 1.2);
+    ctx.quadraticCurveTo(hx + 5, hy + 3.9, hx + 0.5, hy + 3.8);
+    ctx.quadraticCurveTo(hx - 4.8, hy + 3.4, hx - 3.8, hy - 2.2);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "rgba(" + AMBER + "," + A + ")";
+    ctx.beginPath(); ctx.arc(hx + 2.4, hy - 0.4, 0.7, 0, TAU); ctx.fill();
+    // near-side legs
+    leg(Hx + 1.5, Hy + 6, 17, lerp(0.55, -1.0, legE(0)), 3.6, A);
+    if (P.raise) leg(Sx + 1, Sy + 7, 14, lerp(0.2, 1.45, P.raise), -2.5, A);
+    else leg(Sx + 1, Sy + 7, 15.5, lerp(-0.45, 1.0, legE(-0.1)), -2, A);
+    ctx.restore();
   }
 
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    ctx.lineWidth = 0.7;
-    for (var i = 0; i < nodes.length; i++) {
-      var a = nodes[i];
-      for (var j = i + 1; j < nodes.length; j++) {
-        var b = nodes[j], dx = a.x - b.x, dy = a.y - b.y;
-        if (Math.abs(dx) > linkDist || Math.abs(dy) > linkDist) continue;
-        var d = Math.sqrt(dx * dx + dy * dy);
-        if (d < linkDist) {
-          var t = 1 - d / linkDist, alpha = t * t * 0.3;
-          var g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-          g.addColorStop(0, rgba(a.c, alpha)); g.addColorStop(1, rgba(b.c, alpha));
-          ctx.strokeStyle = g;
-          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        }
-      }
-    }
-    for (var k = 0; k < nodes.length; k++) {
-      var n = nodes[k];
-      ctx.fillStyle = rgba(n.c, 0.5 + 0.2 * Math.sin(n.ph));
-      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.2832); ctx.fill();
-    }
-    for (var p = 0; p < pulses.length; p++) {
-      var q = pulses[p], x = q.a.x + (q.b.x - q.a.x) * q.t, y = q.a.y + (q.b.y - q.a.y) * q.t;
-      var rg = ctx.createRadialGradient(x, y, 0, x, y, 6);
-      rg.addColorStop(0, rgba([255, 228, 190], Math.sin(q.t * Math.PI) * 0.55)); rg.addColorStop(1, rgba(AMBER, 0));
-      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, 6, 0, 6.2832); ctx.fill();
-    }
-    if (trail) {
-      for (var m = 0; m < trail.prints.length; m++) {
-        var age = trail.t - m * trail.gap;        // each print fades in, lingers, then fades out
-        if (age <= 0) break;
-        var al = age < 600 ? age / 600 : age < 2600 ? 1 : Math.max(0, 1 - (age - 2600) / 2400);
-        if (al > 0) drawPaw(trail.prints[m].x, trail.prints[m].y, trail.prints[m].a, al * 0.2);
-      }
-    }
+    if (!run) return;
+    drawYarn(run); drawCat(run);
   }
 
   function frame(now) {
-    var dt = last ? Math.min(now - last, 64) : 16; last = now;
+    var dt = last ? Math.min(now - last, 50) : 16; last = now;
     step(dt); draw();
-    raf = requestAnimationFrame(frame);
+    if (run) raf = requestAnimationFrame(frame);
+    else { raf = 0; ctx.clearRect(0, 0, W, H); schedule(40000 + Math.random() * 40000); }
   }
-  function start() { if (!raf && !reduce && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
+  function start() { if (!raf && run && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
   function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
 
-  setup(); draw();   // reduced motion: this single static frame is all that is drawn
-  var resizeT = 0;
-  window.addEventListener("resize", function () { clearTimeout(resizeT); resizeT = setTimeout(function () { setup(); draw(); }, 150); });
-  document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
-  start();
-  // Test hook: ?trail=1 starts a paw-print trail right away
-  if (/[?&]trail=1\b/.test(location.search)) nextTrail = 300;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stop(); clearTimeout(timer); }
+    else if (run) start();
+    else schedule(Math.max(due - Date.now(), 1500));
+  });
+  // Test hook: ?cat=1 starts a run right away
+  schedule(/[?&]cat=1\b/.test(location.search) ? 300 : 6000 + Math.random() * 6000);
 })();
 </script>
 </body>
