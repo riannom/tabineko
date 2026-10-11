@@ -418,8 +418,8 @@
       c.save(); c.translate(hcx, hcy); c.rotate(ha); c.scale(1.08, 1.08 * (1 - 0.07 * tl));
       fillSpline(c, HEAD);
       var pk = opt.prick || 0, pe = 1 + 0.17 * pk;   // ears pricked: up, a little taller, turned forward toward what it saw
-      fillSpline(c, EARF.map(function (p) { var q = rot((p[0] + 2.6) * pe, (p[1] + 2.4) * pe, 0.12 * tl + 0.26 * pk); return [q[0] - 2.6 - 0.35 * tl, q[1] - 2.4 + 0.3 * tl]; }));
-      var fl = -(opt.ear || 0) * 0.45 - 0.05 * tl + 0.3 * pk, ne = EARN.map(function (p) { var q = rot((p[0] - 0.2) * pe, (p[1] + 3.6) * pe, fl); return [q[0] + 0.2, q[1] - 3.6]; });
+      var pu0 = opt.perk || 0; fillSpline(c, EARF.map(function (p) { var q = rot((p[0] + 2.6) * pe, (p[1] + 2.4) * pe, 0.12 * tl + 0.26 * pk + 0.1 * pu0); return [q[0] - 2.6 - 0.35 * tl + 0.1 * pu0, q[1] - 2.4 + 0.3 * tl - 0.5 * pu0]; }));
+      var pu = opt.perk || 0, fl = -(opt.ear || 0) * 0.45 - 0.05 * tl + 0.3 * pk + 0.14 * pu, ne = EARN.map(function (p) { var q = rot((p[0] - 0.2) * pe, (p[1] + 3.6) * pe, fl); return [q[0] + 0.2 + 0.15 * pu, q[1] - 3.6 - 0.65 * pu]; });   // perk: the ear lifts ~1 page px and tips forward when it first sees the ball
       fillSpline(c, ne);
       var mo = opt.mouth || 0;
       if (mo > 0.01) {
@@ -561,14 +561,27 @@
     var rx = R.r * (1 + sq) * (1 + lump), ry = R.r * (1 - sq) * (1 - lump);
     return { rx: rx, ry: ry, cy: R.g - R.yh - ry };
   }
-  function looseAt(R) { var b = ballShape(R), th = R.rot + R.la; return [R.yx + b.rx * Math.cos(th), b.cy + b.ry * Math.sin(th)]; }   // turns with the ball: the end winds over the top
-  function simLoose(R, dt) {   // a short, limp end (4 segments) under gravity: it trails behind the turning ball, drapes over it and flops down
-    var s = R.s, gy = R.g - 0.6, bs = ballShape(R), a = looseAt(R), i, it, j, seg = 4.4 * s, N = R.ytail, rc = Math.max(bs.rx, bs.ry) + 0.8;
-    if (!N) { N = R.ytail = []; for (i = 1; i <= 4; i++) { var nx = a[0] + 0.7 * seg * i, ny = Math.min(gy, a[1] + 0.7 * seg * i); N.push({ x: nx, y: ny, px: nx - R.Y.vx * 4, py: ny }); } }   // hanging, trailing
-    var lb = R.lb || [R.yx, bs.cy, R.rot, a[0], a[1]], sub = Math.max(1, Math.ceil(dt / 2)), h = dt / sub, G = 0.012 * h * h, dmp = Math.pow(0.955, h);   // light and limp: strong air drag, no flinging
+  function looseAt(R) {   // where the strand leaves the ball: the surface point facing its first free node (it unwinds from there, so the ball's spin pays it out rather than winding it up)
+    var b = ballShape(R), q = R.ytail && R.ytail[0], th = q ? Math.atan2((q.y - b.cy) / b.ry, (q.x - R.yx) / b.rx) : R.rot + R.la;
+    return [R.yx + b.rx * Math.cos(th), b.cy + b.ry * Math.sin(th)];
+  }
+  var YPAY = [5.0, 2.2, 1.0, 0.6], YSEG = 1.8, YMAXN = 14;   // strand paid out per floor contact (local units), node spacing, node cap
+  function simLoose(R, dt) {   // the loose end: a limp verlet strand under gravity that trails the turning ball, drapes over it and flops down.
+    // It unravels a little: each impact pays out some strand at the ball (most on the hard first contact), and a little more as it rolls.
+    var s = R.s, gy = R.g - 0.6, bs = ballShape(R), a = looseAt(R), i, it, j, seg = YSEG * s, N = R.ytail, RL = R.ytl, rc = Math.max(bs.rx, bs.ry) + 0.8;
+    if (!N) { N = R.ytail = []; RL = R.ytl = []; R.ypay = 0; R.yhit = 0; for (i = 1; i <= 3; i++) { var nx = a[0] + 0.6 * 1.75 * s * i, ny = Math.min(gy, a[1] + 0.6 * 1.75 * s * i); N.push({ x: nx, y: ny, px: nx - R.Y.vx * 4, py: ny }); RL.push(1.75 * s); } }   // a short end, hanging, trailing
+    var hn = R.Y.hit || 0;
+    while (R.yhit < hn) { R.ypay += (YPAY[R.yhit] || 0) * s; R.yhit++; }   // an impact loosens a few turns
+    if (R.Y.roll && !R.Y.stop && R.lb) R.ypay += 0.05 * Math.abs(R.yx - R.lb[0]);   // and rolling unwinds a little more
+    var lb = R.lb || [R.yx, bs.cy, R.rot, a[0], a[1]], sub = Math.max(1, Math.ceil(dt / 2)), h = dt / sub, G = 0.012 * h * h, dmp = Math.pow(0.982, h);   // light and limp: some air drag, no flinging
     var om = (R.rot - lb[2]) / Math.max(dt, 1);
     for (j = 0; j < sub; j++) {
       var f = (j + 1) / sub, cx = lerp(lb[0], R.yx, f), cy = lerp(lb[1], bs.cy, f), ax = lerp(lb[3], a[0], f), ay = lerp(lb[4], a[1], f);
+      if (R.ypay > 1e-3) { var pd = Math.min(R.ypay, R.ypay * h / 45 + 0.002 * h * s); RL[0] += pd; R.ypay -= pd; }   // fed out at the ball over a few tens of ms
+      while (RL[0] > 1.6 * seg && N.length < YMAXN) {   // a new node where the fresh strand leaves the ball
+        var b0n = N[0], d0 = Math.hypot(ax - b0n.x, ay - b0n.y) || 1e-3, fr = Math.min(seg / d0, 1), nnx = b0n.x + (ax - b0n.x) * fr, nny = b0n.y + (ay - b0n.y) * fr;
+        N.unshift({ x: nnx, y: nny, px: nnx - (b0n.x - b0n.px), py: nny - (b0n.y - b0n.py) }); RL.unshift(RL[0] - seg); RL[1] = seg;
+      }
       for (i = 0; i < N.length; i++) {
         var q = N[i], vx = (q.x - q.px) * dmp, vy = (q.y - q.py) * dmp;
         q.px = q.x; q.py = q.y; q.x += vx; q.y += vy + G;
@@ -576,13 +589,13 @@
       for (it = 0; it < 6; it++) {
         for (i = 0; i < N.length; i++) {   // only resists stretching: free to bend and bunch
           var p1 = i ? N[i - 1] : { x: ax, y: ay }, p2 = N[i], dx = p2.x - p1.x, dy = p2.y - p1.y, dd = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-          if (dd <= seg) continue;
-          var c = (dd - seg) / dd, w1 = i ? 0.5 : 0, w2 = i ? 0.5 : 1;
+          if (dd <= RL[i]) continue;
+          var c = (dd - RL[i]) / dd, w1 = i ? 0.5 : 0, w2 = i ? 0.5 : 1;
           p1.x += dx * c * w1; p1.y += dy * c * w1; p2.x -= dx * c * w2; p2.y -= dy * c * w2;
         }
         for (i = 1; i < N.length; i++) {   // a little body: it bends freely but does not fold back on itself
-          var b0 = i > 1 ? N[i - 2] : { x: ax, y: ay }, b1 = N[i], bx = b1.x - b0.x, by = b1.y - b0.y, bd = Math.sqrt(bx * bx + by * by) || 1e-6, bm = 1.3 * seg;
-          if (bd < bm) { var bc = (bm - bd) / bd * 0.12, u0 = i > 1 ? 0.5 : 0; b0.x -= bx * bc * u0; b0.y -= by * bc * u0; b1.x += bx * bc * (1 - u0); b1.y += by * bc * (1 - u0); }
+          var b0 = i > 1 ? N[i - 2] : { x: ax, y: ay }, b1 = N[i], bx = b1.x - b0.x, by = b1.y - b0.y, bd = Math.sqrt(bx * bx + by * by) || 1e-6, bm = (b0.y >= gy - 0.05 && b1.y >= gy - 0.05 ? 0.85 : 0.65) * (RL[i - 1] + RL[i]);   // lying flat it smooths out rather than curling up
+          if (bd < bm) { var bc = (bm - bd) / bd * 0.3, u0 = i > 1 ? 0.5 : 0; b0.x -= bx * bc * u0; b0.y -= by * bc * u0; b1.x += bx * bc * (1 - u0); b1.y += by * bc * (1 - u0); }
         }
         for (i = 0; i < N.length; i++) {   // lies over the ball, not through it; a little grip on the turning surface
           var q2 = N[i], ex2 = q2.x - cx, ey2 = q2.y - cy, el = Math.sqrt(ex2 * ex2 + ey2 * ey2);
@@ -685,7 +698,7 @@
       R.mouth = R.mt < 380 ? 0 : R.mt < 480 ? smooth((R.mt - 380) / 100) : 1;
       R.tilt = smooth((R.mt - 420) / 100) * (1 - smooth((R.mt - 700) / 200));
       if (!R.held && R.mt >= BITE) { R.held = true; R.bp = null; }
-      if (R.mt > GT) { R.mode = "off"; R.mt = 0; R.cv = 0; }
+      if (R.mt > GT) { R.mode = "off"; R.mt = 0; R.cv = 0; R.phi = 0.52; }   // trot starts on the near hind + far fore pair (the near forefoot and far hind, already reaching, swing first)
       return;
     }
     if (R.mode === "off") { R.cv = Math.min(R.vt, R.cv + dt * R.vt / 380); v = R.cv; R.stride = 21 * (1 + 0.05 * Math.sin(R.t * 0.0011)); R.tilt = 0; }   // never a pixel-exact loop
@@ -768,7 +781,8 @@
       var a1 = smooth((t - 340) / 115), a2 = smooth((t - 400) / 115);
       v[14] += (bL + ONB[0][0] - v[14]) * a1; v[15] += (ONB[0][1] - v[15]) * a1;   // the forepaws home in on the ball
       v[20] += (bL + ONB[1][0] - v[20]) * a2; v[21] += (ONB[1][1] - v[21]) * a2;
-      var hp = t < 274 || t >= 565 ? 1 : 0;
+      var hl2 = t < 565 ? smooth((t - 455) / 50) : 0; v[18] *= 1 - hl2; v[24] *= 1 - hl2;   // hind feet come down and plant where they land; the legs take up the rest of the landing
+      var hp = t < 274 || t >= 505 ? 1 : 0;
       v[26] = t < 215 ? 1 : t >= 455 ? 2 : 0; v[28] = t < 215 ? 1 : t >= 515 ? 2 : 0; v[27] = v[29] = hp;
       return v;
     }
@@ -891,6 +905,7 @@
     if (R.sp === undefined && (m === "enter" || m === "look") && R.cx > -12 * R.s) R.sp = R.t;   // its head is on the page: it sees the ball
     if (R.sp !== undefined && (m === "enter" || m === "look" || m === "run")) {   // ears prick forward and stay up until it is into its stride
       o.prick = smooth((R.t - R.sp - 120) / 260) * (m === "run" ? 1 - smooth(t / 350) : 1);
+      var pt = R.t - R.sp - 120; o.perk = smooth(pt / 90) * (1 - smooth((pt - 300) / 260));   // the first notice: a brief extra lift, then it eases back
       if (o.prick > 0) o.ear = 0;
     }
     o.tilt = R.tilt || 0;
@@ -996,7 +1011,12 @@
     // before the grab: the short loose end flopping behind the ball
     if (!R.ytail) return;
     var bs0 = ballShape(R); ctx.save(); ctx.beginPath(); ctx.rect(0, -SK, W, SK + H); ctx.ellipse(X(R.yx), bs0.cy, bs0.rx + 0.2, bs0.ry + 0.2, 0, 0, TAU); ctx.clip("evenodd"); strandStyle(); ctx.beginPath();
-    var a = looseAt(R), Q = [[X(a[0]), a[1]]].concat(R.ytail.map(function (q) { return [X(q.x), q.y]; }));
+    var a = looseAt(R), T = R.ytail, cum = 0, Q = [], k;
+    for (k = T.length - 1; k >= 0; k--) {   // lying on the ground it shows the same faint waviness as the dragged strand
+      if (k < T.length - 1) cum += Math.hypot(T[k].x - T[k + 1].x, T[k].y - T[k + 1].y);
+      var on = clamp(1 - (R.g - 0.6 - T[k].y) / 1.5, 0, 1); Q.unshift([X(T[k].x), T[k].y - 0.35 * (1 + Math.sin(cum * 0.11)) * on]);
+    }
+    Q.unshift([X(a[0]), a[1]]);
     ctx.moveTo(Q[0][0], Q[0][1]);
     for (i = 1; i < Q.length - 1; i++) ctx.quadraticCurveTo(Q[i][0], Q[i][1], (Q[i][0] + Q[i + 1][0]) / 2, (Q[i][1] + Q[i + 1][1]) / 2);
     ctx.lineTo(Q[Q.length - 1][0], Q[Q.length - 1][1]);
