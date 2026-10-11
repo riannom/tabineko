@@ -251,12 +251,12 @@
       lift: P({ h: [-7.0, -11.4], s: [10.6, -13.0], arch: 0.9, scap: 0.8, neck: -0.6, head: 0.6, fl: [12.4, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.6, 0, 1.15], hf: [-7.0, 0, 1.15], t: TL(0.85) }),
       toss: P({ h: [-7.4, -12.6], s: [9.8, -14.2], arch: 0.6, scap: 0.6, neck: -1.0, head: 0.6, fl: [12.6, 0, 0.42], ff: [11.2, 0, 0.42], hl: [-5.4, 0, 1.2], hf: [-6.8, 0, 1.2], t: TL(0.95) }),
       // standing still, alert, weight square over all four feet; tail low and quiet
-      stand: P({ h: [-8.4, -14.2], s: [8.8, -14.2], arch: 0.5, scap: 0.5, neck: -0.7, head: 0.5, fl: [13.0, 0, 0.45], ff: [11.4, 0, 0.45], hl: [-3.6, 0, 0.95], hf: [-5.0, 0, 0.95], t: [PI + 0.3, 0.12, 0.14, 0.16, 0.2, 0.26] }),
+      stand: P({ h: [-8.4, -14.3], s: [8.8, -12.9], arch: 0.4, scap: 0.7, neck: -0.4, head: 0.4, fl: [8.4, 0, 0.55], ff: [7.2, 0, 0.55], hl: [-5.4, 0, 1.0], hf: [-6.6, 0, 1.0], t: [PI + 0.08, 0.03, 0.03, 0.04, 0.05, 0.06] }),
       carry: P({ h: [-8.6, -14.0], s: [9.2, -14.6], arch: 0.6, scap: 0.4, neck: -1.0, head: 0.6, fl: [13.0, 0, 0.45], ff: [11.4, 0, 0.45], hl: [-3.8, 0, 0.95], hf: [-5.2, 0, 0.95], t: [PI + 1.0, -0.1, -0.02, 0.08, 0.16, 0.24] })
     };
     // where the head goes in the grab (centre x, y, absolute head angle): over the ball, down to it, up with it
     [["crouch", 12.8, -8.8, 0.12], ["crouchDeep", 12.6, -8.4, 0.14], ["landCP", 12.4, -14.6, 0.55], ["landHP", 12.8, -14.2, 0.6], ["pin", 13.0, -14.0, 0.68], ["pinB", 13.4, -13.5, 0.72],
-     ["release", 14.2, -12.4, 0.62], ["dip", 15.8, -10.0, 0.7], ["bite", 16.35, -8.62, 0.75], ["lift", 14.6, -13.4, 0.4], ["toss", 13.6, -16.4, -0.18], ["carry", 12.0, -18.7, -0.06], ["stand", 12.2, -18.2, 0.12]].forEach(function (q) { headAt(poses[q[0]], q[1], q[2], q[3]); });
+     ["release", 14.2, -12.4, 0.62], ["dip", 15.8, -10.0, 0.7], ["bite", 16.35, -8.62, 0.75], ["lift", 14.6, -13.4, 0.4], ["toss", 13.6, -16.4, -0.18], ["carry", 12.0, -18.7, -0.06], ["stand", 12.4, -16.8, 0.16]].forEach(function (q) { headAt(poses[q[0]], q[1], q[2], q[3]); });
     // the ball held in the mouth: its centre sits just past the front teeth, along the gape (head-local), radius rr
     function hold(v, rr) {
       var at = spine(v), nb = neckBase(at), ha = v[6] + v[7], p = rot((1.6 + 0.6 * rr) * 1.08, (2.1 + 0.4 * rr) * 1.08, ha);   // behind the lip and canine line
@@ -417,9 +417,9 @@
       var tl = opt.tilt || 0;   // head rolled toward us (bite with the side teeth): face foreshortens, far ear drops behind
       c.save(); c.translate(hcx, hcy); c.rotate(ha); c.scale(1.08, 1.08 * (1 - 0.07 * tl));
       fillSpline(c, HEAD);
-      var pk = opt.prick || 0, pe = 1 + 0.13 * pk;   // ears pricked: up, a little taller, turned forward toward what it saw
-      fillSpline(c, EARF.map(function (p) { var q = rot((p[0] + 2.6) * pe, (p[1] + 2.4) * pe, 0.12 * tl + 0.18 * pk); return [q[0] - 2.6 - 0.35 * tl, q[1] - 2.4 + 0.3 * tl]; }));
-      var fl = -(opt.ear || 0) * 0.45 - 0.05 * tl + 0.2 * pk, ne = EARN.map(function (p) { var q = rot((p[0] - 0.2) * pe, (p[1] + 3.6) * pe, fl); return [q[0] + 0.2, q[1] - 3.6]; });
+      var pk = opt.prick || 0, pe = 1 + 0.17 * pk;   // ears pricked: up, a little taller, turned forward toward what it saw
+      fillSpline(c, EARF.map(function (p) { var q = rot((p[0] + 2.6) * pe, (p[1] + 2.4) * pe, 0.12 * tl + 0.26 * pk); return [q[0] - 2.6 - 0.35 * tl, q[1] - 2.4 + 0.3 * tl]; }));
+      var fl = -(opt.ear || 0) * 0.45 - 0.05 * tl + 0.3 * pk, ne = EARN.map(function (p) { var q = rot((p[0] - 0.2) * pe, (p[1] + 3.6) * pe, fl); return [q[0] + 0.2, q[1] - 3.6]; });
       fillSpline(c, ne);
       var mo = opt.mouth || 0;
       if (mo > 0.01) {
@@ -701,16 +701,17 @@
   function lookAt(R, v, a) {
     if (a <= 0) return v;
     var hc = CAT.head(v), bL = (R.yx - R.cx) / R.s, by = -R.r / R.s;
-    CAT.steady(v, hc[1] + 1.8 * a, hc[0] + 0.45 * a);
+    CAT.steady(v, hc[1] + 1.4 * a, hc[0] + 0.4 * a);
     var hn = CAT.head(v), aim = clamp(Math.atan2(by - hn[1], bL - hn[0]) * 0.8, 0.1, 0.42);
     v[7] = lerp(v[7], aim - v[6], a);
     return v;
   }
   function lookPose(R, t) {   // standing still, fixed on the ball: a slow settle of weight forward, one hind-foot adjustment, tail tip twitching
     var v = PS.stand.slice(), g = smooth(t / 900);
-    v[0] += 0.45 * g; v[2] += 0.35 * g; v[1] += 0.35 * g;   // weight eases forward and the haunches sink a touch, gathering
+    v[0] += 0.25 * g; v[2] += 0.25 * g; v[3] += 0.25 * g;   // weight eases forward over the forelegs, chest sinking a touch
+    var wu = smooth((t - (LT - 130)) / 110); v[0] -= 0.65 * wu; v[1] += 0.65 * wu; v[4] += 0.3 * wu;   // wind-up: the rear sinks and draws back, then it pushes off
     var u = clamp((t - 430) / 220, 0, 1), lift = Math.sin(Math.PI * u);   // far hind foot lifts and resets a little forward
-    v[23] += 0.9 * smooth(u); v[24] -= 0.9 * lift; v[29] = u > 0.04 && u < 0.96 ? 0 : 1; v[33] = 0.5 * lift;
+    v[23] += 0.6 * smooth(u); v[24] -= 0.8 * lift; v[29] = u > 0.04 && u < 0.96 ? 0 : 1; v[33] = 0.5 * lift;
     v[12] += Math.sin(t * 0.006) * 0.05; v[13] += 0.5 * Math.pow(Math.max(0, Math.sin(t * 0.0125 - 1)), 4) - 0.08;   // the tail lies still; only its tip flicks
     lookAt(R, v, 0.5 + 0.5 * smooth(t / 350));
     if (t >= LT - 1) R.lookEnd = v.slice();
@@ -723,6 +724,7 @@
       w = smooth(((R.eb || 0) - 0.45) / 0.55);
       var tg = CAT.trot(R.phi, R.stride, false, R.ex0 === undefined ? 0 : Math.min(1, R.stride / 21));
       v = CAT.lerp(tg, PS.stand, w);
+      var wt = smooth(((R.eb || 0) - 0.05) / 0.6); for (var ti = 8; ti < 14; ti++) v[ti] = lerp(tg[ti], PS.stand[ti], wt);   // the tail drops level as it slows
       for (var k3 = 0; k3 < 4; k3++) v[26 + k3] = w > 0.55 ? 1 : tg[26 + k3] > 0.5 ? 1 : 0;
       return lookAt(R, v, w * 0.5);
     }
@@ -817,7 +819,7 @@
         if (!f.pl) {
           if (f.y < -0.3 && R.mode !== "run" && R.mode !== "off") { f.st = { t: 0, d: 110, x0: cu + f.x, y0: f.y, a0: f.a, h: 0.6 }; n++; }   // gaits set their feet down themselves
           else { f.pl = true; f.wx = cu + f.x; }
-        } else if (R.canStep && n < (R.mode === "look" ? 1 : 2) && Math.abs(f.wx - cu - v[i]) > (R.mode === "look" && R.mt < 420 ? 1.6 : 3.2) && F.filter(function (q, j) { return j !== k && q.pl; }).length >= 2) { f.st = { t: 0, d: 150, x0: f.wx, y0: 0, a0: f.a, h: 2.0 }; f.pl = false; n++; }
+        } else if (R.canStep && n < (R.mode === "look" || R.mode === "enter" ? 1 : 2) && Math.abs(f.wx - cu - v[i]) > ((R.mode === "look" && R.mt < 500) || (R.mode === "enter" && R.eb > 0.35) ? 1.2 : 3.2) && F.filter(function (q, j) { return j !== k && q.pl; }).length >= 2) { f.st = { t: 0, d: 150, x0: f.wx, y0: 0, a0: f.a, h: 2.0 }; f.pl = false; n++; }
         if (f.pl) { f.x = f.wx - cu; f.y = 0; f.a = v[i + 2]; }
       } else {
         if (f.pl) { f.pl = false; f.ox = f.wx - cu - v[i]; }
