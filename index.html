@@ -73,70 +73,100 @@
   function ease(t) { return 1 - (1 - t) * (1 - t); }
   function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
 
-  // ---- Cat rig: a pose is a flat vector; legs solved with 2-bone IK; drawn as soft spline silhouettes ----
+  // ---- Cat rig: a pose is a flat vector; legs solved with 2-bone IK; drawn as one soft silhouette ----
   // Local units: cat faces +x, ground at y=0, y grows downward; ~27 units to the ear tips: a round, short-legged house cat.
   var CAT = (function () {
-    var K = 0.92, FL1 = 4.8, FL2 = 5.4, FP = 2.0, HL1 = 6.2, HL2 = 6.5, HM = 3.9, TN = 8, TS = 2.05;
+    var K = 0.92, FL1 = 4.8, FL2 = 5.4, FP = 2.0, HL1 = 6.2, HL2 = 6.5, HM = 3.9, TN = 8, TS = 2.05, PI = Math.PI;
     // vector: 0 hx,1 hy (hip),2 sx,3 sy (withers on the spine),4 arch,5 scapula lift,6 neck angle,7 head angle,
     //   8 tail base angle, 9-13 tail bends, 14-16 near fore paw (x,y,a), 17-19 near hind, 20-22 far fore, 23-25 far hind,
-    //   26-29 planted flags (near fore, near hind, far fore, far hind)
+    //   26-29 planted flags (near fore, near hind, far fore, far hind), 30-33 paw (toe) angles, 0 = flat on the ground
     function sm(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
     function mix(a, b, t) { return a + (b - a) * t; }
+    function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+    function relax(a) { return clamp(PI / 2 - a - 0.8, -0.2, 2.4); }   // a lifted paw hangs on from its pastern
     function P(o) {
-      var t = o.t || [Math.PI + 1.0, 0.1, 0.2, 0.3, 0.45, 0.5];
-      var ff = o.ff || [o.fl[0] - 1.5, o.fl[1], o.fl[2]], hf = o.hf || [o.hl[0] - 1.3, o.hl[1], o.hl[2]];
-      ff = [ff[0] * K, ff[1], ff[2]]; hf = [hf[0] * K, hf[1], hf[2]];
-      return [o.h[0] * K + 0.5, o.h[1], o.s[0] * K - 0.5, o.s[1], o.arch, o.scap === undefined ? 0.5 : o.scap, o.neck, o.head || 0].concat(t, [o.fl[0] * K, o.fl[1], o.fl[2]], [o.hl[0] * K, o.hl[1], o.hl[2]], ff, hf, o.pl || [1, 1, 1, 1]);
+      var t = o.t || [PI + 1.0, 0.1, 0.2, 0.3, 0.45, 0.5], pl = o.pl || [1, 1, 1, 1];
+      var ff = o.ff || [o.fl[0] - 1.6, o.fl[1], o.fl[2]], hf = o.hf || [o.hl[0] - 1.4, o.hl[1], o.hl[2]];
+      var L = [[o.fl[0] * K, o.fl[1], o.fl[2]], [o.hl[0] * K, o.hl[1], o.hl[2]], [ff[0] * K, ff[1], ff[2]], [hf[0] * K, hf[1], hf[2]]];
+      var toe = o.toe || L.map(function (p, i) { return pl[i] ? 0 : relax(p[2]); });
+      var v = [o.h[0] * K + 0.5, o.h[1], o.s[0] * K - 0.5, o.s[1], o.arch, o.scap === undefined ? 0.5 : o.scap, o.neck, o.head || 0].concat(t, L[0], L[1], L[2], L[3], pl, toe);
+      for (var k in (o.W || {})) wrist(v, +k, o.W[k]);
+      return v;
     }
-    var TU = function (b) { return [Math.PI + b, 0.06, 0.12, 0.24, 0.38, 0.5]; };   // tail up, tip curled over
-    // One paw over its own phase u: planted & sliding back at ground speed during stance, then lifted,
-    // folded (wrist flexed, paw curled) and swung forward to reach for the next footfall. a = pastern angle.
-    function paw1(u, duty, sweep, lift, xc, fore) {
-      u = ((u % 1) + 1) % 1;
-      if (u < duty) {
-        var t = u / duty;
-        return [xc + sweep * (0.5 - t), 0, fore ? 0.5 + 0.6 * Math.pow(t, 1.8) - 0.17 * Math.sin(Math.PI * t) : 0.5 + 0.65 * Math.pow(t, 1.8) - 0.12 * Math.sin(Math.PI * t), Math.sin(Math.PI * t), 1];
+    // place a lifted leg by its wrist/hock: direction (deg below the +x axis) and reach (fraction of the leg) from its root
+    function wrist(v, k, w) {
+      var fore = !(k & 1), r = roots(spine(v))[["nf", "nh", "ff", "fh"][k]], l = (fore ? FL1 + FL2 : HL1 + HL2) * w[1], d = w[0] * PI / 180;
+      var lp = fore ? FP : HM, ball = fore ? [-0.25, -1.25] : [-0.35, -1.25];
+      var W = [r[0] + Math.cos(d) * l, r[1] + Math.sin(d) * l], M = [W[0] + Math.sin(w[2]) * lp, W[1] + Math.cos(w[2]) * lp];
+      v[14 + 3 * k] = M[0] - ball[0]; v[15 + 3 * k] = M[1] - ball[1]; v[16 + 3 * k] = w[2]; v[30 + k] = w[3];
+    }
+    var TU = function (b) { return [PI + b, 0.06, 0.12, 0.24, 0.38, 0.5]; };   // tail up, tip curled over
+    // ---- keyframe curves: piecewise cubic Hermite through [t, values...] keys (Catmull-Rom tangents) ----
+    function herm(K2, t, m0, m1) {
+      var n = K2.length, i = 0, j, r = [];
+      while (i < n - 2 && K2[i + 1][0] < t) i++;
+      var a = K2[i], b = K2[i + 1], h = b[0] - a[0], u = clamp((t - a[0]) / h, 0, 1), u2 = u * u, u3 = u2 * u;
+      var h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+      for (j = 1; j < a.length; j++) {
+        var ma = i > 0 ? (b[j] - K2[i - 1][j]) / (b[0] - K2[i - 1][0]) : m0 ? m0[j - 1] : (b[j] - a[j]) / h;
+        var mb = i < n - 2 ? (K2[i + 2][j] - a[j]) / (K2[i + 2][0] - a[0]) : m1 ? m1[j - 1] : (b[j] - a[j]) / h;
+        r.push(h00 * a[j] + h10 * h * ma + h01 * b[j] + h11 * h * mb);
       }
-      // swing: Hermite path that leaves and arrives moving back at ground speed (no skid at lift-off or touchdown)
-      var s = (u - duty) / (1 - duty), m = -sweep / duty * (1 - duty), s2 = s * s, s3 = s2 * s;
-      var x = (2 * s3 - 3 * s2 + 1) * (xc - sweep / 2) + (s3 - 2 * s2 + s) * m + (-2 * s3 + 3 * s2) * (xc + sweep / 2) + (s3 - s2) * m;
-      var y = -lift * Math.pow(Math.sin(Math.PI * Math.pow(s, 0.8)), 0.9);
-      var a = fore ? (s < 0.35 ? mix(1.1, -1.5, sm(s / 0.35)) : mix(-1.5, 0.48, sm((s - 0.35) / 0.55)))
-                   : (s < 0.4 ? mix(1.15, -0.3, sm(s / 0.4)) : mix(-0.3, 0.5, sm((s - 0.4) / 0.55)));
-      return [x, y - drop(a, fore), a, 0, 0];
+      return r;
     }
-    // order: near fore, near hind, far fore, far hind
-    var GAIT = {
-      bound: { duty: 0.17, off: [0, 0.48, 0.07, 0.53], xc: [10.6, -5.4, 9.6, -6.5], lift: [5.4, 4.6], tb: 0.7, tw: 0.32 },
-      trot: { duty: 0.34, off: [0, 0.5, 0.5, 0.03], xc: [10.3, -7.6, 9.4, -7.9], lift: [3.4, 2.9], tb: 1.2, tw: 0.2 }
+    function cyc(K2, phi) {   // periodic keys over [0,1)
+      phi = ((phi % 1) + 1) % 1;
+      var n = K2.length, E = [K2[n - 2].slice(), K2[n - 1].slice()].map(function (k) { k[0] -= 1; return k; }).concat(K2, [K2[0], K2[1]].map(function (k) { k = k.slice(); k[0] += 1; return k; }));
+      return herm(E, phi);
+    }
+    // One leg over the cycle: planted from td for duty d, sliding back at ground speed (stride per cycle);
+    // the swing runs through hand-set keys [phase, x, y, pastern, toe] and leaves/arrives moving at ground speed.
+    function legAt(L, phi, stride, dph, dx) {
+      var u = ((phi - L.td - dph) % 1 + 1) % 1, d = L.d, xlo = L.x + dx - stride * d;
+      if (u < d) { var s = u / d; return [L.x + dx - stride * u, 0, mix(L.a0, L.a1, Math.pow(s, 1.5)), 0, 1]; }
+      var keys = [[d, xlo, 0, L.a1, 0]].concat(L.k.map(function (k) { return [k[0] - L.td, k[1] + dx, k[2], k[3], k[4]]; }), [[1, L.x + dx, 0, L.a0, 0]]);
+      var r = herm(keys, u, [-stride, 0, 0, 0], [-stride, 0, 0, 0]);
+      r[1] = Math.min(r[1], 0); r.push(0);
+      return r;
+    }
+    // ---- gaits. Bound (Muybridge): extended flight (forelegs reach, hind legs trail) -> forefeet land ->
+    // spine flexes into the gathered flight (all four feet under the body) -> hind feet land ahead -> push off.
+    var BOUND = {
+      body: [[0.00, -10.0, -15.3, 8.4, -15.0, -0.8], [0.10, -10.1, -15.6, 8.5, -14.9, -0.9], [0.20, -9.8, -15.3, 8.4, -13.9, -0.3],
+             [0.30, -9.1, -15.4, 8.1, -13.0, 1.1], [0.42, -7.7, -15.6, 7.8, -13.5, 3.2], [0.52, -7.0, -15.5, 7.6, -14.3, 3.9],
+             [0.62, -7.3, -14.7, 7.8, -14.8, 3.0], [0.72, -8.5, -13.9, 8.1, -14.9, 1.3], [0.84, -9.7, -14.7, 8.3, -15.1, -0.4]],
+      fore: { td: 0.20, d: 0.16, x: 14.2, a0: 0.3, a1: 1.15,
+              k: [[0.45, 2.4, -2.8, -1.3, 2.4], [0.55, 1.6, -3.3, -1.9, 3.2], [0.66, 6.4, -4.6, -1.0, 2.1], [0.78, 12.5, -7.2, -0.3, 1.0],
+                  [0.9, 17.2, -5.6, 0.25, 0.4], [1.02, 18.6, -3.8, 0.4, 0.15], [1.13, 16.4, -1.5, 0.35, 0.05]] },
+      hind: { td: 0.62, d: 0.16, x: -1.0, a0: 0.9, a1: 1.2,
+              k: [[0.86, -15.0, -2.4, 0.0, 1.9], [0.99, -19.5, -4.2, -1.0, 2.5], [1.12, -16.0, -6.2, -0.3, 1.8],
+                  [1.30, -8.4, -7.0, 0.4, 1.0], [1.45, -1.8, -3.8, 0.85, 0.45], [1.56, -0.4, -1.8, 0.95, 0.12]] },
+      far: [0.06, -1.3, 0.045, -1.1], tail: [PI + 0.45, 0.1]
     };
-    // stride: ground distance (local units) per cycle
-    function gait(phi, kind, stride) {
-      var G = GAIT[kind], d = G.duty, sw = stride * d, T = phi * 6.2832, L = [], i;
-      for (i = 0; i < 4; i++) L.push(paw1(phi - G.off[i], d, sw, G.lift[i & 1], G.xc[i] * K, !(i & 1)));
-      var hx, hy, sx, sy, arch, flex;
-      if (kind === "bound") {   // spine gathers (flexed) as the hind feet land, extends to reach with the forelegs
-        flex = 0.5 - 0.5 * Math.cos(T + 0.3);
-        hx = (-10.4 + 3.3 * flex) * K + 0.5; sx = (9.6 - 1.0 * flex) * K - 0.5; arch = -0.8 + 4.6 * flex;
-        sy = -13.5 + 1.5 * Math.cos(T - 0.75); hy = -14.7 + 1.4 * Math.cos(T - 3.8);
-      } else {                  // trot: small double bob, mostly level spine
-        flex = 0.5 + 0.5 * Math.cos(2 * T);
-        hx = -9.6 * K + 0.5; sx = 9.3 * K - 0.5; arch = 0.5 + 0.5 * flex;
-        sy = -13.4 + 0.45 * Math.cos(2 * T - 1.3); hy = -14.6 + 0.45 * Math.cos(2 * T - 1.5);
-      }
-      var v = [hx, hy, sx, sy, arch, 0.2 + 1.6 * L[0][3] + 0.6 * L[2][3], -1, 0,
-               Math.PI + G.tb + G.tw * Math.sin(T - 1.2), 0.06, 0.12, 0.24, 0.38, 0.5];
+    var TROT = {
+      body: [[0, -8.7, -14.5, 8.0, -13.6, 0.6], [0.25, -8.7, -14.9, 8.0, -13.9, 0.8], [0.5, -8.7, -14.5, 8.0, -13.6, 0.6], [0.75, -8.7, -14.9, 8.0, -13.9, 0.8]],
+      fore: { td: 0, d: 0.36, x: 13.6, a0: 0.35, a1: 1.05, k: [[0.52, 6.2, -2.3, -0.2, 1.25], [0.78, 11.8, -2.6, 0.2, 0.55], [0.92, 13.9, -0.9, 0.32, 0.12]] },
+      hind: { td: 0.5, d: 0.36, x: -2.4, a0: 0.95, a1: 1.2, k: [[0.98, -11.6, -2.2, 0.45, 1.1], [1.22, -6.2, -2.8, 0.8, 0.5], [1.4, -3.0, -0.9, 0.92, 0.12]] },
+      far: [0.5, -1.2, 0.5, 0.2], tail: [PI + 1.25, 0.06]
+    };
+    function gait(phi, G, stride, kind) {
+      var b = cyc(G.body, phi), L = [legAt(G.fore, phi, stride, 0, 0), legAt(G.hind, phi, stride, 0, 0),
+              legAt(G.fore, phi, stride, G.far[0], G.far[1]), legAt(G.hind, phi, stride, G.far[2], G.far[3])], i, T = phi * 2 * PI;
+      var v = [b[0], b[1], b[2], b[3], b[4], 0.2 + 0.9 * (L[0][4] + L[2][4]), -1, 0];
+      if (kind === "bound") v.push(G.tail[0] + 0.1 * Math.sin(T - 1.2), 0.0, -0.04, -0.06, -0.03, 0.04);
+      else v.push(G.tail[0] + 0.06 * Math.sin(T / 2), -0.08, -0.02, 0.2, 0.62, 0.95);   // trot: tail up, relaxed question-mark tip
       for (i = 0; i < 4; i++) v.push(L[i][0], L[i][1], L[i][2]);
       for (i = 0; i < 4; i++) v.push(L[i][4]);
-      for (i = 0; i < 5; i++) v[9 + i] += Math.sin(T - 1.6 - i * 0.9) * G.tw * (0.7 + i * 0.2);   // wave travels base -> tip
-      return steady(v, -19.4);
+      for (i = 0; i < 4; i++) v.push(L[i][3]);
+      for (i = 0; i < 5; i++) v[9 + i] += Math.sin(T * (kind === "bound" ? 1 : 0.5) - 1.6 - i * 0.9) * G.tail[1] * (0.6 + i * 0.25);   // wave runs base -> tip
+      return steady(v, kind === "bound" ? -19.6 : -19.4);
     }
-    // ---- spine: cubic curve hip -> withers, flexing up with arch; returns point/tangent/up-normal at t ----
+    // ---- spine: cubic curve hip -> withers, flexing up with arch; returns point at t (+ normal offset, + tangent extension) ----
     function spine(v) {
-      var Hx = v[0], Hy = v[1], Sx = v[2], Sy = v[3], dx = Sx - Hx, dy = Sy - Hy, L = Math.sqrt(dx * dx + dy * dy), ux = dx / L, uy = dy / L, nx = uy, ny = -ux;
+      var Hx = v[0], Hy = v[1], Sx = v[2], Sy = v[3], dx = Sx - Hx, dy = Sy - Hy, L = Math.sqrt(dx * dx + dy * dy), nx = dy / L, ny = -dx / L;
       var aL = v[4], aT = v[4] * 0.3 + 0.2;
       var c1x = Hx + dx / 3 + nx * aL, c1y = Hy + dy / 3 + ny * aL, c2x = Hx + 2 * dx / 3 + nx * aT, c2y = Hy + 2 * dy / 3 + ny * aT;
-      return function (t, off, fwd) {
+      var f = function (t, off, fwd) {
         var q = t < 0 ? 0 : t > 1 ? 1 : t, u = 1 - q;
         var x = u * u * u * Hx + 3 * u * u * q * c1x + 3 * u * q * q * c2x + q * q * q * Sx;
         var y = u * u * u * Hy + 3 * u * u * q * c1y + 3 * u * q * q * c2y + q * q * q * Sy;
@@ -146,6 +176,8 @@
         var e = (t - q) * L + (fwd || 0); off = off || 0;
         return [x + tx * e + ty * off, y + ty * e - tx * off];
       };
+      f.L = L;
+      return f;
     }
     function neckBase(at) { return at(1.0, 1.3, 0.9); }
     // Head stabilisation: the head holds its height and stays level while the body moves under it.
@@ -156,18 +188,26 @@
       return v;
     }
     var poses = {
-      crouch: P({ h: [-8.8, -10.6], s: [8.2, -8.9], arch: 0.9, scap: 0.9, neck: -0.12, head: 0.14, fl: [11.8, 0, 0.55], hl: [-5.4, 0, 1.0], t: [Math.PI - 0.45, 0.06, 0.08, 0.1, 0.14, 0.2] }),
-      crouchDeep: P({ h: [-9.2, -9.4], s: [8.0, -8.2], arch: 1.4, scap: 1.1, neck: -0.08, head: 0.1, fl: [11.8, 0, 0.6], hl: [-5.6, 0, 1.15], t: [Math.PI - 0.5, 0.05, 0.07, 0.1, 0.14, 0.22] }),
-      launch: P({ h: [-8.8, -13.0], s: [9.8, -14.6], arch: -0.6, scap: 0.8, neck: -0.55, head: 0.5, fl: [15.8, -6.5, -0.7], hl: [-12.5, 0, 0.9], pl: [0, 1, 0, 1], t: [Math.PI - 0.25, 0.05, 0.07, 0.1, 0.13, 0.17] }),
-      flight: P({ h: [-10.6, -13.2], s: [10.4, -13.6], arch: -1.0, scap: 0.3, neck: -0.42, head: 0.36, fl: [19.0, -8.0, 0.45], hl: [-17.5, -6.8, 1.5], pl: [0, 0, 0, 0], t: [Math.PI + 0.05, 0.04, 0.06, 0.08, 0.11, 0.15] }),
-      reach: P({ h: [-10.2, -13.8], s: [9.8, -11.8], arch: -0.4, scap: 0.6, neck: -0.32, head: 0.32, fl: [15.6, 0, 0.1], hl: [-14.5, -6.2, 1.25], pl: [1, 0, 1, 0], t: [Math.PI + 0.3, 0.05, 0.08, 0.12, 0.16, 0.2] }),
-      landC: P({ h: [-8.6, -13.4], s: [8.6, -7.4], arch: 1.7, scap: 2.5, neck: -0.25, head: 0.3, fl: [13.8, 0, 0.75], hl: [-9.2, -2.8, 0.8], pl: [1, 0, 1, 0], t: TU(0.4) }),
-      landH: P({ h: [-8.2, -11.4], s: [8.6, -8.4], arch: 1.6, scap: 2.0, neck: -0.4, head: 0.4, fl: [13.8, 0, 0.7], hl: [-5.2, 0, 0.9], t: TU(0.8) }),
-      land: P({ h: [-8.0, -11.0], s: [8.4, -10.4], arch: 1.4, scap: 1.2, neck: -0.7, head: 0.66, fl: [13.6, 0, 0.55], hl: [-5.0, 0, 1.0], t: TU(0.9) }),
-      bat0: P({ h: [-7.6, -8.4], s: [6.4, -13.2], arch: 1.0, scap: 0.8, neck: -1.2, head: 1.1, fl: [8.3, 0, 0.3], ff: [7.1, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.0, 0, 1.42], t: TU(1.0) }),
-      batUp: P({ h: [-7.8, -8.4], s: [6.0, -13.8], arch: 1.0, scap: 1.4, neck: -1.25, head: 1.18, fl: [11.4, -8.2, -0.75], ff: [7.1, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.0, 0, 1.42], pl: [0, 1, 1, 1], t: TU(1.05) }),
-      batBack: P({ h: [-7.6, -8.4], s: [6.4, -13.2], arch: 1.0, scap: 1.0, neck: -1.2, head: 1.1, fl: [8.6, -2.6, -0.1], ff: [7.1, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.0, 0, 1.42], pl: [0, 1, 1, 1], t: TU(1.0) }),
-      batHit: P({ h: [-7.4, -8.4], s: [6.8, -12.6], arch: 1.2, scap: 1.0, neck: -1.05, head: 1.0, fl: [15.4, -2.4, -0.3], ff: [7.1, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.0, 0, 1.42], pl: [0, 1, 1, 1], t: TU(1.05) })
+      crouch: P({ h: [-8.8, -10.8], s: [8.2, -9.0], arch: 0.9, scap: 1.0, neck: -0.12, head: 0.14, fl: [11.8, 0, 0.55], ff: [10.0, 0, 0.6], hl: [-5.0, 0, 1.0], hf: [-6.6, 0, 1.0], t: [PI - 0.45, 0.06, 0.08, 0.1, 0.14, 0.2] }),
+      crouchDeep: P({ h: [-9.2, -9.4], s: [8.0, -8.4], arch: 1.4, scap: 1.0, neck: -0.08, head: 0.1, fl: [11.8, 0, 0.6], ff: [10.0, 0, 0.65], hl: [-5.4, 0, 1.15], hf: [-7.0, 0, 1.15], t: [PI - 0.5, 0.05, 0.07, 0.1, 0.14, 0.22] }),
+      launch: P({ h: [-8.8, -13.8], s: [9.6, -15.4], arch: -0.4, scap: 0.6, neck: -0.62, head: 0.58, fl: [0, 0, 0], hl: [-13.0, 0, 1.25], hf: [-14.2, 0, 1.25], pl: [0, 1, 0, 1],
+                      W: { 0: [62, 0.62, -0.9, 1.9], 2: [70, 0.6, -0.8, 1.8] }, t: [PI + 0.1, 0.05, 0.07, 0.1, 0.13, 0.17] }),
+      push: P({ h: [-9.0, -14.2], s: [9.8, -15.0], arch: -0.6, scap: 0.5, neck: -0.7, head: 0.66, fl: [0, 0, 0], hl: [0, 0, 0], pl: [0, 0, 0, 0],
+                      W: { 0: [48, 0.8, -0.1, 1.2], 2: [56, 0.78, -0.1, 1.2], 1: [128, 1.0, -0.55, 1.3], 3: [122, 0.99, -0.5, 1.2] }, t: [PI + 0.25, 0.05, 0.07, 0.1, 0.13, 0.17] }),
+      flight: P({ h: [-10.6, -13.6], s: [10.0, -13.9], arch: 0.4, scap: 0.4, neck: -0.75, head: 0.7, fl: [0, 0, 0], hl: [0, 0, 0], pl: [0, 0, 0, 0],
+                      W: { 0: [34, 0.95, 0.95, 0.35], 2: [44, 0.93, 0.9, 0.4], 1: [146, 0.9, -0.9, 2.45], 3: [136, 0.86, -0.7, 2.3] }, t: [PI + 0.5, 0.0, 0.02, 0.06, 0.1, 0.14] }),
+      reach: P({ h: [-10.2, -13.8], s: [9.6, -12.4], arch: 0.2, scap: 0.6, neck: -0.55, head: 0.5, fl: [15.6, 0, 0.3], hl: [0, 0, 0], pl: [1, 0, 0, 0],
+                      W: { 2: [58, 0.95, 0.6, 0.15], 1: [118, 0.72, -0.2, 1.6], 3: [110, 0.7, -0.1, 1.5] }, t: [PI - 0.05, 0.05, 0.08, 0.12, 0.16, 0.2] }),
+      landC: P({ h: [-8.6, -13.2], s: [8.6, -8.4], arch: 1.6, scap: 1.0, neck: -0.25, head: 0.3, fl: [13.6, 0, 0.7], ff: [11.6, 0, 0.7], hl: [-8.6, -3.4, 0.7], hf: [-10.0, -3.0, 0.7], pl: [1, 0, 1, 0], t: [PI + 0.15, 0.06, 0.1, 0.16, 0.24, 0.3] }),
+      landH: P({ h: [-8.2, -11.4], s: [8.6, -9.0], arch: 1.5, scap: 0.9, neck: -0.4, head: 0.4, fl: [13.6, 0, 0.65], ff: [11.6, 0, 0.65], hl: [-5.2, 0, 0.9], hf: [-6.6, 0, 0.9], t: TU(0.45) }),
+      land: P({ h: [-8.0, -11.0], s: [8.4, -10.4], arch: 1.3, scap: 0.7, neck: -0.7, head: 0.66, fl: [13.4, 0, 0.55], ff: [11.4, 0, 0.55], hl: [-5.0, 0, 1.0], hf: [-6.4, 0, 1.0], t: TU(0.75) }),
+      bat0: P({ h: [-7.6, -8.6], s: [6.4, -13.2], arch: 1.0, scap: 0.6, neck: -1.2, head: 1.1, fl: [8.4, 0, 0.3], ff: [6.6, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.2, 0, 1.42], t: TU(1.0) }),
+      batUp: P({ h: [-7.8, -8.6], s: [6.0, -13.8], arch: 1.0, scap: 0.9, neck: -1.25, head: 1.18, fl: [0, 0, 0], ff: [6.6, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.2, 0, 1.42], pl: [0, 1, 1, 1],
+                     W: { 0: [-28, 0.62, 0.25, 1.35] }, t: TU(1.05) }),
+      batBack: P({ h: [-7.6, -8.6], s: [6.4, -13.2], arch: 1.0, scap: 0.8, neck: -1.2, head: 1.1, fl: [0, 0, 0], ff: [6.6, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.2, 0, 1.42], pl: [0, 1, 1, 1],
+                     W: { 0: [20, 0.55, 0.2, 1.1] }, t: TU(1.0) }),
+      batHit: P({ h: [-7.4, -8.6], s: [6.8, -12.6], arch: 1.2, scap: 0.8, neck: -1.05, head: 1.0, fl: [0, 0, 0], ff: [6.6, 0, 0.3], hl: [-4.8, 0, 1.42], hf: [-6.2, 0, 1.42], pl: [0, 1, 1, 1],
+                     W: { 0: [42, 0.96, 0.9, 0.35] }, t: TU(1.05) })
     };
     poses.watch = poses.bat0;
     function lerpV(a, b, t) { var r = new Array(a.length); for (var i = 0; i < a.length; i++) r[i] = a[i] + (b[i] - a[i]) * t; return r; }
@@ -176,8 +216,8 @@
       for (var i = 0; i < p1.length; i++) r[i] = 0.5 * (2 * p1[i] + (p2[i] - p0[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 + (3 * p1[i] - p0[i] - 3 * p2[i] + p3[i]) * t3);
       return r;
     }
-    function gallop(phi, stride) { return gait(phi, "bound", stride || 58); }
-    function trot(phi, stride) { return gait(phi, "trot", stride || 26); }
+    function gallop(phi, stride) { return gait(phi, BOUND, stride || 60, "bound"); }
+    function trot(phi, stride) { return gait(phi, TROT, stride || 26.5, "trot"); }
     function seq(keys, t) {
       if (t <= keys[0][0]) return keys[0][1].slice();
       var n = keys.length;
@@ -191,19 +231,18 @@
       var cx = (v[0] + v[2]) / 2, cy = (v[1] + v[3]) / 2, c = Math.cos(-pitch), s = Math.sin(-pitch);
       for (var k = 0; k < 2; k++) { var x = v[2 * k] - cx, y = v[2 * k + 1] - cy; v[2 * k] = cx + x * c - y * s; v[2 * k + 1] = cy + x * s + y * c - lift; }
       v[8] -= pitch; v[6] -= pitch; v[7] += pitch * 0.6;
-      for (k = 0; k < 4; k++) if (v[26 + k] < 0.5) v[15 + 3 * k] -= lift;
+      for (k = 0; k < 4; k++) if (v[26 + k] < 0.5) { v[15 + 3 * k] -= lift; }
       return v;
     }
     function rot(x, y, t) { var c = Math.cos(t), s = Math.sin(t); return [x * c - y * s, x * s + y * c]; }
-    function drop(a, fore) {   // how far below the contact point a curled paw hangs (0 when flat)
-      var th = toeAng(a), cx = fore ? 0.95 : 0.97, cy = fore ? 0.15 : 0.1, rx = fore ? 1.95 : 2.2, ry = fore ? 1.15 : 1.2;
-      var c = Math.cos(th), s = Math.sin(th);
-      return Math.max(0, -1.25 + cx * s + cy * c + Math.sqrt(rx * rx * s * s + ry * ry * c * c) - (cy - 1.25 + ry));
+    var PAW = [[0.95, 0.15, 1.85, 1.05], [0.97, 0.1, 2.05, 1.1]];   // knuckle -> paw centre, radii (fore, hind)
+    function drop(a, fore, th) {   // how far below the contact point a turned paw would reach (0 when flat)
+      var q = PAW[fore ? 0 : 1], c = Math.cos(th || 0), s = Math.sin(th || 0);
+      return Math.max(0, q[0] * s + q[1] * c + Math.sqrt(q[2] * q[2] * s * s + q[3] * q[3] * c * c) - (q[1] + q[3]));
     }
-    function toeAng(a) { return a < 0.4 ? (0.4 - a) * 0.95 : 0; }   // pads stay flat while the heel/wrist lifts
-    // 2-bone leg + digitigrade foot. C = toe-pad contact, a = pastern angle (wrist/hock behind when > 0)
-    function leg(R, C, a, l1, l2, lp, bendBack, ball) {
-      var th = toeAng(a), M = [C[0] + ball[0], C[1] + ball[1]];
+    // 2-bone leg + digitigrade foot. C = toe-pad contact, a = pastern angle (wrist/hock behind when > 0), th = paw angle
+    function leg(R, C, a, th, l1, l2, lp, bendBack, ball) {
+      var M = [C[0] + ball[0], C[1] + ball[1]];
       var W = [M[0] - Math.sin(a) * lp, M[1] - Math.cos(a) * lp];
       var dx = W[0] - R[0], dy = W[1] - R[1], d = Math.sqrt(dx * dx + dy * dy);
       if (d > l1 + l2 - 0.02) { var st = Math.min(d / (l1 + l2 - 0.02), 1.07); l1 *= st; l2 *= st; }   // a touch of give before the paw would have to slide
@@ -211,106 +250,122 @@
       var base = Math.atan2(dy, dx), A = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd)))), g = bendBack ? base + A : base - A;
       var E = [R[0] + Math.cos(g) * l1, R[1] + Math.sin(g) * l1], b2 = Math.atan2(W[1] - E[1], W[0] - E[0]);
       var W2 = [E[0] + Math.cos(b2) * l2, E[1] + Math.sin(b2) * l2], sx = W2[0] - W[0], sy = W2[1] - W[1];
-      return { R: R, E: E, W: W2, M: [M[0] + sx, M[1] + sy], C: [C[0] + sx, C[1] + sy], th: th };
+      return { R: R, E: E, W: W2, M: [M[0] + sx, M[1] + sy], C: [C[0] + sx, C[1] + sy], th: th || 0 };
     }
     function roots(at) {
-      return { nf: at(1.0, -2.9, 0.7), ff: at(0.97, -2.5, -0.3), nh: at(0.0, -0.9, 0.0), fh: at(0.02, -0.6, 0.4) };
+      return { nf: at(1.0, -2.9, 0.1), ff: at(0.97, -2.4, -0.6), nh: at(0.0, -0.9, 0.0), fh: at(0.03, -0.5, 0.2) };
     }
     function solve(v) {
       var at = spine(v), r = roots(at);
-      return [leg(r.nf, [v[14], v[15]], v[16], FL1, FL2, FP, true, [-0.25, -1.25]),
-              leg(r.nh, [v[17], v[18]], v[19], HL1, HL2, HM, false, [-0.35, -1.25]),
-              leg(r.ff, [v[20], v[21]], v[22], FL1, FL2, FP, true, [-0.25, -1.25]),
-              leg(r.fh, [v[23], v[24]], v[25], HL1, HL2, HM, false, [-0.35, -1.25])];
+      return [leg(r.nf, [v[14], v[15]], v[16], v[30], FL1, FL2, FP, true, [-0.25, -1.25]),
+              leg(r.nh, [v[17], v[18]], v[19], v[31], HL1, HL2, HM, false, [-0.35, -1.25]),
+              leg(r.ff, [v[20], v[21]], v[22], v[32], FL1, FL2, FP, true, [-0.25, -1.25]),
+              leg(r.fh, [v[23], v[24]], v[25], v[33], HL1, HL2, HM, false, [-0.35, -1.25])];
     }
-    // ---- drawing ----
-    function spline(c, p) {   // closed Catmull-Rom spline through p, filled
-      var n = p.length; c.beginPath(); c.moveTo(p[0][0], p[0][1]);
+    // ---- drawing: everything is filled opaque into one path set (the caller composites it at one opacity) ----
+    function spline(c, p) {   // closed Catmull-Rom spline through p
+      var n = p.length; c.moveTo(p[0][0], p[0][1]);
       for (var i = 0; i < n; i++) {
         var p0 = p[(i - 1 + n) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
         c.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]);
       }
-      c.closePath(); c.fill();
+      c.closePath();
     }
-    // tapered limb/tail outline through joints J; RA radii on the left of travel (the back of a leg pointing down), RB right
-    function limb(c, J, RA, RB) {
-      var n = J.length, A = [], B = [], i;
-      for (i = 0; i < n; i++) {
-        var a = J[Math.max(i - 1, 0)], b = J[Math.min(i + 1, n - 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.sqrt(dx * dx + dy * dy) || 1;
-        A.push([J[i][0] - dy / l * RA[i], J[i][1] + dx / l * RA[i]]); B.push([J[i][0] + dy / l * RB[i], J[i][1] - dx / l * RB[i]]);
-      }
-      var e = J[n - 1], d = J[n - 2], ex = e[0] - d[0], ey = e[1] - d[1], el = Math.sqrt(ex * ex + ey * ey) || 1, er = (RA[n - 1] + RB[n - 1]) / 2;
-      var s0 = J[0], s1 = J[1], sx = s1[0] - s0[0], sy = s1[1] - s0[1], sl = Math.sqrt(sx * sx + sy * sy) || 1, sr = (RA[0] + RB[0]) / 2 * 0.8;
-      spline(c, A.concat([[e[0] + ex / el * er, e[1] + ey / el * er]], B.reverse(), [[s0[0] - sx / sl * sr, s0[1] - sy / sl * sr]]));
+    function fillSpline(c, p) { c.beginPath(); spline(c, p); c.fill(); }
+    // tapered capsule between two circles: never self-intersects, so bent joints stay clean
+    function cap(c, a, ra, b, rb) {
+      var dx = b[0] - a[0], dy = b[1] - a[1], d = Math.sqrt(dx * dx + dy * dy);
+      c.beginPath();
+      if (d <= Math.abs(ra - rb) + 1e-3) { var big = ra > rb; c.arc(big ? a[0] : b[0], big ? a[1] : b[1], Math.max(ra, rb), 0, 2 * PI); c.fill(); return; }
+      var base = Math.atan2(dy, dx), f = Math.acos(clamp((ra - rb) / d, -1, 1));
+      c.arc(a[0], a[1], ra, base + f, base + 2 * PI - f); c.arc(b[0], b[1], rb, base - f, base + f); c.closePath(); c.fill();
     }
-    function ell(c, x, y, rx, ry, r) { c.beginPath(); c.ellipse(x, y, rx, ry, r, 0, 6.2832); c.fill(); }
+    function chain(c, J, R) { for (var i = 0; i < J.length - 1; i++) cap(c, J[i], R[i], J[i + 1], R[i + 1]); }
+    function ell(c, x, y, rx, ry, r) { c.beginPath(); c.ellipse(x, y, rx, ry, r, 0, 2 * PI); c.fill(); }
     function mid(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
-    function drawFore(c, L, k) {
-      limb(c, [L.R, L.E, mid(L.E, L.W, 0.45), mid(L.E, L.W, 0.86), L.W, L.M], [3.1 * k, 2.3 * k, 1.55 * k, 1.1 * k, 1.25 * k, 1.0 * k], [2.2 * k, 1.85 * k, 1.72 * k, 1.2 * k, 1.15 * k, 1.0 * k]);
-      var p = rot(0.95, 0.15, L.th); ell(c, L.M[0] + p[0], L.M[1] + p[1], 1.95 * k, 1.15, L.th);   // paw hinges at the knuckle
+    function paw(c, L, q, k) { var p = rot(q[0], q[1], L.th); ell(c, L.M[0] + p[0], L.M[1] + p[1], q[2] * k, q[3] * k, L.th); }
+    function drawFore(c, L, k) {   // upper arm, forearm, wrist, pastern, paw
+      chain(c, [L.R, L.E, mid(L.E, L.W, 0.5), L.W, L.M], [2.5 * k, 1.75 * k, 1.4 * k, 1.05 * k, 0.95 * k]);
+      paw(c, L, PAW[0], k);
     }
-    function drawHind(c, L, k) {
-      limb(c, [L.R, L.E, mid(L.E, L.W, 0.45), mid(L.E, L.W, 0.84), L.W, L.M], [6.3 * k, 3.4 * k, 2.55 * k, 1.5 * k, 1.85 * k, 1.08 * k], [5.0 * k, 2.7 * k, 1.85 * k, 1.25 * k, 1.1 * k, 1.0 * k]);
-      var p = rot(0.97, 0.1, L.th); ell(c, L.M[0] + p[0], L.M[1] + p[1], 2.2 * k, 1.2, L.th);
+    function drawHind(c, L, k) {   // thigh (haunch), stifle, calf, hock with its heel point, long foot, paw
+      var ux = L.W[0] - L.E[0], uy = L.W[1] - L.E[1], ul = Math.sqrt(ux * ux + uy * uy) || 1;
+      var heel = [L.W[0] + ux / ul * 0.35, L.W[1] + uy / ul * 0.35];
+      chain(c, [L.R, L.E, mid(L.E, L.W, 0.4), L.W, L.M], [4.9 * k, 2.35 * k, 1.75 * k, 1.08 * k, 0.92 * k]);
+      cap(c, L.W, 1.1 * k, heel, 0.85 * k);
+      paw(c, L, PAW[1], k);
     }
     function tail(v) {   // tail centre line (local) from the pose: base angle + bends
-      var at = spine(v), p = at(-0.1, 2.5), pts = [p], a = v[8];
+      var at = spine(v), p = at(-0.15, 1.7), pts = [p], a = v[8];
       for (var i = 0; i < TN; i++) {
         if (i) { var f = (i - 1) / (TN - 2) * 4, k = Math.min(3, Math.floor(f)); a += (v[9 + k] + (v[10 + k] - v[9 + k]) * (f - k)) * 0.78; }
         p = [p[0] + Math.cos(a) * TS, p[1] + Math.sin(a) * TS]; pts.push(p);
       }
       return pts;
     }
+    function drawTail(c, tp) {   // smooth tapered tube: resample the centre line, then a run of capsules
+      var P2 = [], i, j, n = tp.length;
+      for (i = 0; i < n - 1; i++) for (j = 0; j < 3; j++) {
+        var p0 = tp[Math.max(i - 1, 0)], p1 = tp[i], p2 = tp[i + 1], p3 = tp[Math.min(i + 2, n - 1)];
+        P2.push(cr(p0, p1, p2, p3, j / 3));
+      }
+      P2.push(tp[n - 1]);
+      var R = P2.map(function (_, k) { return 2.1 - 1.4 * Math.pow(k / (P2.length - 1), 0.85); });
+      chain(c, P2, R);
+    }
     var HEAD = [[4.95, 0.75], [4.75, -0.5], [4.15, -1.75], [3.0, -3.15], [1.0, -4.2], [-1.6, -4.25], [-3.8, -3.0], [-4.9, -1.0], [-5.1, 1.4], [-4.3, 3.2],
                 [-2.5, 4.4], [0.3, 4.55], [2.4, 4.05], [3.45, 3.55], [3.95, 2.9], [4.75, 2.35], [5.1, 1.6]];
     var EARN = [[-2.1, -3.0], [-1.7, -4.6], [-0.95, -6.3], [-0.2, -7.35], [0.55, -7.2], [1.5, -5.7], [2.5, -3.9], [1.0, -3.0]];
-    var EARF = [[-4.6, -1.9], [-4.4, -3.7], [-3.95, -5.7], [-3.35, -6.75], [-2.7, -6.5], [-1.9, -4.9], [-1.1, -3.4], [-2.6, -2.2]];
+    var EARF = [[-4.2, -1.9], [-4.35, -3.7], [-3.95, -5.7], [-3.35, -6.75], [-2.7, -6.5], [-1.9, -4.9], [-1.1, -3.4], [-2.6, -2.2]];
+    var FAROFF = [0.3, -0.45];   // far legs sit a little up and back (they are further from us)
     // opt: { blink 0..1, ear 0..1 (near-ear flick), tail: [[x,y]..] simulated tail, pouch, belly }
     function draw(c, v, body, far, opt) {
       opt = opt || {};
       var at = spine(v), legs = solve(v), i;
       c.fillStyle = far;
-      drawHind(c, legs[3], 0.92); drawFore(c, legs[2], 0.92);
+      c.save(); c.translate(FAROFF[0], FAROFF[1]); drawHind(c, legs[3], 0.93); drawFore(c, legs[2], 0.93); c.restore();
       c.fillStyle = body;
-      // tail: thick root, long taper to a slim tip
-      var tp = opt.tail || tail(v), TR = [], TL = [];
-      for (i = 0; i <= TN; i++) { var rr = 2.35 - 1.62 * Math.pow(i / TN, 0.85); TR.push(rr); TL.push(rr); }
-      limb(c, tp, TR, TL);
-      // torso + neck as one contour: rump, back (shoulder blades rising), scruff, throat, deep chest, soft belly, primordial pouch
-      var sc = v[5], nb = neckBase(at), hcx = nb[0] + Math.cos(v[6]) * 5.0, hcy = nb[1] + Math.sin(v[6]) * 5.0, ha = v[6] + v[7];
-      function Hd(x, y) { var p = rot(x, y, ha); return [hcx + p[0], hcy + p[1]]; }
-      var wi = at(0.93, 5.1 + sc * 0.8, -sc * 0.6), na = Hd(-4.5, -1.3), ch = at(1.08, -2.3, 4.2), jw = Hd(-0.6, 3.9);
+      drawTail(c, opt.tail || tail(v));
+      // torso + neck as one contour sampled from smooth profiles: rump, back, (shoulder blades), scruff -> into the
+      // head, throat, chest, deep ribcage, waist, belly with its pouch, flank
+      var sc = clamp(v[5], 0, 2) * 0.32, nb = neckBase(at), hcx = nb[0] + Math.cos(v[6]) * 5.0, hcy = nb[1] + Math.sin(v[6]) * 5.0, ha = v[6] + v[7];
+      function Hd(x, y) { var p = rot(x * 1.08, y * 1.08, ha); return [hcx + p[0], hcy + p[1]]; }
+      var wi = at(1.0, 4.7 + sc * 0.3, -0.3), na = Hd(-3.7, -2.5);
       var sx = na[0] - wi[0], sy = na[1] - wi[1], sl = Math.sqrt(sx * sx + sy * sy) || 1;
-      var scruff = [(wi[0] + na[0]) / 2 + sy / sl * 0.9, (wi[1] + na[1]) / 2 - sx / sl * 0.9];
-      var tx = ch[0] - jw[0], ty = ch[1] - jw[1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
-      var throat = [(jw[0] + ch[0]) / 2 + ty / tl * 0.5, (jw[1] + ch[1]) / 2 - tx / tl * 0.5];
-      var pouch = opt.pouch || 0, belly = opt.belly || 0;
-      spline(c, [at(-0.12, 3.9), at(0.02, 5.3), at(0.28, 5.55), at(0.55, 5.2), at(0.78, 4.9), wi, scruff, na, Hd(-3.2, 3.0), jw, throat, ch,
-                 at(0.96, -5.7, 1.5), at(0.74, -6.1), at(0.46, -6.3 - belly), at(0.2, -6.5 - pouch, pouch * 0.3), at(0.02, -4.8), at(-0.12, -1.8), at(-0.2, 1.9)]);
+      var scruff = [(wi[0] + na[0]) / 2 + sy / sl * 0.7, (wi[1] + na[1]) / 2 - sx / sl * 0.85];
+      var jw = Hd(-0.8, 3.0), ch = at(1.0, -2.6, 3.0), tx = ch[0] - jw[0], ty = ch[1] - jw[1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
+      var throat = [(jw[0] + ch[0]) / 2 + ty / tl * 0.45, (jw[1] + ch[1]) / 2 - tx / tl * 0.45];
+      var pouch = opt.pouch || 0, belly = opt.belly || 0, str = clamp((at.L - 15.5) / 3.5, 0, 1), wt = 0.9 * str;   // stretched spine: waist tucks
+      c.beginPath();
+      spline(c, [at(-0.2, 2.6), at(-0.08, 4.3), at(0.1, 4.95), at(0.3, 5.15), at(0.55, 4.95), at(0.8, 4.85 + sc), wi, scruff, na, Hd(-1.5, 0.6), jw, throat, ch,
+                 at(1.0, -5.4, 1.5), at(0.8, -6.7), at(0.58, -6.35 - belly * 0.5 + wt * 0.3), at(0.36, -5.95 - belly + wt * 0.7), at(0.17, -5.7 - pouch + wt * 0.4), at(0.02, -4.8), at(-0.15, -3.0), at(-0.25, -0.2)]);
+      c.fill();
       // head: flat-topped skull, cheek ruff, short muzzle with a defined chin; ears grow out of the skull
       c.save(); c.translate(hcx, hcy); c.rotate(ha); c.scale(1.08, 1.08);
-      spline(c, HEAD);
-      spline(c, EARF);
+      fillSpline(c, HEAD); fillSpline(c, EARF);
       var fl = -(opt.ear || 0) * 0.45, ne = EARN.map(function (p) { var q = rot(p[0] - 0.2, p[1] + 3.6, fl); return [q[0] + 0.2, q[1] - 3.6]; });
-      spline(c, ne);
+      fillSpline(c, ne);
       c.globalCompositeOperation = "destination-out";
       ell(c, 2.45, -0.55, 1.0, 0.84 * (1 - (opt.blink || 0) * 0.85), -0.1);   // eye
       c.restore();
       c.fillStyle = body;
+      cap(c, at(0.24, -4.6), 1.6, legs[1].E, 2.2);    // flank fold: the knee stays joined to the belly
+      cap(c, at(0.86, -5.0), 1.6, legs[0].E, 1.6);    // the elbow tucks against the chest
       drawHind(c, legs[1], 1); drawFore(c, legs[0], 1);
     }
     function contacts(v) { return solve(v).map(function (L) { return L.C; }); }
     function head(v) { var at = spine(v), nb = neckBase(at); return [nb[0] + Math.cos(v[6]) * 5.0, nb[1] + Math.sin(v[6]) * 5.0]; }
     function forePaw(v) { return solve(v)[0].C; }
+    function joints(v) { return solve(v); }
     return { gallop: gallop, trot: trot, steady: steady, seq: seq, lerp: lerpV, place: place, poses: poses, draw: draw, tail: tail,
-             contacts: contacts, head: head, forePaw: forePaw, drop: drop, TN: TN, TS: TS };
+             contacts: contacts, head: head, forePaw: forePaw, drop: drop, relax: relax, joints: joints, TN: TN, TS: TS };
   })();
 
   var PS = CAT.poses, REACH = CAT.forePaw(PS.batHit)[0] + 2.2;   // how far ahead of the cat its swipe lands
   // Pounce, timed in ms: settle deeper (weight onto the haunches) -> push off -> stretched parabolic arc -> forepaws land,
   // chest compresses -> hind feet come down -> recover. Horizontal travel, lift and pitch are applied on top of the key poses.
   var PT = 700, PDIST = 40;
-  var POUNCE = [[0, PS.crouch], [170, PS.crouchDeep], [250, PS.launch], [330, PS.flight], [455, PS.reach], [515, PS.landC], [575, PS.landH], [700, PS.land]].map(function (k) { return [k[0] / PT, k[1]]; });
+  var POUNCE = [[0, PS.crouch], [170, PS.crouchDeep], [250, PS.launch], [290, PS.push], [340, PS.flight], [455, PS.reach], [515, PS.landC], [575, PS.landH], [700, PS.land]].map(function (k) { return [k[0] / PT, k[1]]; });
   var BAT = [[0, PS.land], [0.2, PS.batUp], [0.33, PS.batHit], [0.48, PS.batUp], [0.62, PS.batHit], [0.76, PS.batBack], [0.88, PS.bat0], [1, PS.bat0]];   // two quick pats
   var VF = PDIST / 252.5;
   function pD(t) {   // horizontal travel during the pounce (local units)
@@ -320,7 +375,7 @@
     var u = Math.min(t - 455, 85); return VF * (210 + u - u * u / 170);
   }
   function pLift(t) { var u = (t - 290) / 165; return u > 0 && u < 1 ? 8.5 * 4 * u * (1 - u) : 0; }
-  function pPitch(t) { return t < 190 ? 0 : t < 290 ? 0.28 * smooth((t - 190) / 100) : t < 455 ? lerp(0.28, -0.26, smooth((t - 290) / 165)) : -0.26 * (1 - smooth((t - 455) / 120)); }
+  function pPitch(t) { return t < 190 ? 0 : t < 290 ? 0.14 * smooth((t - 190) / 100) : t < 455 ? lerp(0.14, -0.26, smooth((t - 290) / 165)) : -0.26 * (1 - smooth((t - 455) / 120)); }
 
   function schedule(ms) { due = Date.now() + ms; clearTimeout(timer); if (!document.hidden) timer = setTimeout(begin, ms); }
 
@@ -435,8 +490,9 @@
       if (f.st) {
         f.st.t += dt / f.st.d; var u = Math.min(f.st.t, 1), e = smooth(u), ex = smooth(u / 0.78), tx = cu + v[i];   // travel first, then set down
         f.x = f.st.x0 + (tx - f.st.x0) * ex - cu; f.y = f.st.y0 * (1 - e) - f.st.h * Math.sin(Math.PI * u);
-        f.a = lerp(f.st.a0, v[i + 2], e) - (k & 1 ? 0.6 : 1.4) * Math.sin(Math.PI * u);
-        f.y -= CAT.drop(f.a, !(k & 1));
+        f.a = lerp(f.st.a0, v[i + 2], e) - (k & 1 ? 0.5 : 0.9) * Math.sin(Math.PI * u);
+        f.th = (k & 1 ? 0.7 : 1.1) * Math.sin(Math.PI * u);
+        f.y -= CAT.drop(f.a, !(k & 1), f.th);
         if (u >= 1) { f.st = null; f.pl = true; f.wx = tx; f.x = v[i]; f.y = 0; n--; }
       } else if (want) {
         if (!f.pl) {
@@ -449,6 +505,7 @@
         f.ox *= Math.exp(-dt / 45); f.x = v[i] + f.ox; f.y = v[i + 1]; f.a = v[i + 2];
       }
       v[i] = f.x; v[i + 1] = f.y; v[i + 2] = f.a; v[26 + k] = f.pl ? 1 : 0;
+      if (f.st) v[30 + k] = f.th; else if (f.pl) v[30 + k] = 0;
     }
   }
 
@@ -461,8 +518,8 @@
     for (j = 0; j < steps; j++) {
       S[0].x = T[0][0]; S[0].y = T[0][1];
       for (i = 1; i < n; i++) {
-        var q = S[i], fz = 6.5 - 4.0 * (i / (n - 1)), w = fz * 0.006283, z = 0.62;
-        var ax = w * w * (T[i][0] - q.x) - 2 * z * w * q.vx - acc[0] * 0.35, ay = w * w * (T[i][1] - q.y) - 2 * z * w * q.vy - acc[1] * 0.35;
+        var q = S[i], fz = 4.5 + 10 * Math.pow(1 - i / (n - 1), 1.5), w = fz * 0.006283, z = 0.75;
+        var ax = w * w * (T[i][0] - q.x) - 2 * z * w * q.vx - acc[0] * 0.2, ay = w * w * (T[i][1] - q.y) - 2 * z * w * q.vy - acc[1] * 0.2;
         q.vx += ax * h; q.vy += ay * h; q.x += q.vx * h; q.y += q.vy * h;
       }
       for (i = 1; i < n; i++) {   // keep segment lengths
