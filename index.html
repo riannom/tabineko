@@ -563,21 +563,28 @@
   }
   function looseAt(R) {   // where the strand leaves the ball: the surface point facing its first free node (it unwinds from there, so the ball's spin pays it out rather than winding it up)
     var b = ballShape(R), q = R.ytail && R.ytail[0], th = q ? Math.atan2((q.y - b.cy) / b.ry, (q.x - R.yx) / b.rx) : R.rot + R.la;
+    if (q && R.yrl !== undefined) {   // rolling: it peels off the underside, just behind the contact point, as the ball turns over it
+      var tu = Math.PI / 2 - 0.3, wr = smooth((R.t - R.yrl) / 120), dth = Math.atan2(Math.sin(tu - th), Math.cos(tu - th)); th += dth * wr;
+    }
     return [R.yx + b.rx * Math.cos(th), b.cy + b.ry * Math.sin(th)];
   }
-  var YPAY = [5.0, 2.2, 1.0, 0.6], YSEG = 1.8, YMAXN = 14;   // strand paid out per floor contact (local units), node spacing, node cap
+  var YPAY = [0.9, 0.35, 0.15, 0], YSEG = 1.8, YMAXN = 22, YDRAG = 65;   // strand paid out per bounce (local units; the roll lays the rest), node spacing, node cap, air-drag response (ms)
   function simLoose(R, dt) {   // the loose end: a limp verlet strand under gravity that trails the turning ball, drapes over it and flops down.
     // It unravels a little: each impact pays out some strand at the ball (most on the hard first contact), and a little more as it rolls.
     var s = R.s, gy = R.g - 0.6, bs = ballShape(R), a = looseAt(R), i, it, j, seg = YSEG * s, N = R.ytail, RL = R.ytl, rc = Math.max(bs.rx, bs.ry) + 0.8;
-    if (!N) { N = R.ytail = []; RL = R.ytl = []; R.ypay = 0; R.yhit = 0; for (i = 1; i <= 3; i++) { var nx = a[0] + 0.6 * 1.75 * s * i, ny = Math.min(gy, a[1] + 0.6 * 1.75 * s * i); N.push({ x: nx, y: ny, px: nx - R.Y.vx * 4, py: ny }); RL.push(1.75 * s); } }   // a short end, hanging, trailing
+    if (!N) { N = R.ytail = []; RL = R.ytl = []; R.ypay = 0; R.yhit = 0; for (i = 1; i <= 3; i++) { var nx = a[0] + 0.6 * 0.9 * s * i, ny = Math.min(gy, a[1] + 0.6 * 0.9 * s * i); N.push({ x: nx, y: ny, px: nx - R.Y.vx * 4, py: ny }); RL.push(0.9 * s); } }   // a short end, hanging, trailing
     var hn = R.Y.hit || 0;
     while (R.yhit < hn) { R.ypay += (YPAY[R.yhit] || 0) * s; R.yhit++; }   // an impact loosens a few turns
-    if (R.Y.roll && !R.Y.stop && R.lb) R.ypay += 0.05 * Math.abs(R.yx - R.lb[0]);   // and rolling unwinds a little more
-    var lb = R.lb || [R.yx, bs.cy, R.rot, a[0], a[1]], sub = Math.max(1, Math.ceil(dt / 2)), h = dt / sub, G = 0.012 * h * h, dmp = Math.pow(0.982, h);   // light and limp: some air drag, no flinging
+    if (R.Y.roll && R.yrl === undefined) R.yrl = R.t;
+    var lay = R.Y.roll && R.lb ? Math.abs(R.yx - R.lb[0]) : 0;   // rolling lays strand on the floor: exactly the distance rolled is unwound
+    var cont = R.Y.dw > 0 || R.yh < 0.01, lift = R.ycont && !cont && !R.Y.roll; R.ycont = cont;   // the frame the ball leaves the floor
+    var lb = R.lb || [R.yx, bs.cy, R.rot, a[0], a[1]], sub = Math.max(1, Math.ceil(dt / 2)), h = dt / sub, G = YG * h * h, dmp = Math.exp(-h / YDRAG);   // same gravity as the ball; drag only against still air
+    if (lift) for (i = 0; i < N.length; i++) { N[i].px = N[i].x - R.Y.vx * h; N[i].py = N[i].y + R.Y.vy * h; }   // the strand bounces up with the ball
     var om = (R.rot - lb[2]) / Math.max(dt, 1);
     for (j = 0; j < sub; j++) {
       var f = (j + 1) / sub, cx = lerp(lb[0], R.yx, f), cy = lerp(lb[1], bs.cy, f), ax = lerp(lb[3], a[0], f), ay = lerp(lb[4], a[1], f);
       if (R.ypay > 1e-3) { var pd = Math.min(R.ypay, R.ypay * h / 45 + 0.002 * h * s); RL[0] += pd; R.ypay -= pd; }   // fed out at the ball over a few tens of ms
+      RL[0] += lay / sub;
       while (RL[0] > 1.6 * seg && N.length < YMAXN) {   // a new node where the fresh strand leaves the ball
         var b0n = N[0], d0 = Math.hypot(ax - b0n.x, ay - b0n.y) || 1e-3, fr = Math.min(seg / d0, 1), nnx = b0n.x + (ax - b0n.x) * fr, nny = b0n.y + (ay - b0n.y) * fr;
         N.unshift({ x: nnx, y: nny, px: nnx - (b0n.x - b0n.px), py: nny - (b0n.y - b0n.py) }); RL.unshift(RL[0] - seg); RL[1] = seg;
@@ -603,7 +610,7 @@
             q2.x = cx + ex2 * rc / el; q2.y = cy + ey2 * rc / el;
             if (it === 0) { var tx = -ey2 / el, ty = ex2 / el, sv = om * rc * h + (R.yx - lb[0]) / sub * tx, qv = (q2.x - q2.px) * tx + (q2.y - q2.py) * ty, dv = (sv - qv) * 0.05; q2.px -= dv * tx; q2.py -= dv * ty; }
           }
-          if (q2.y >= gy) { q2.y = gy; if (it === 0) { q2.py = gy; q2.px = q2.x - (q2.x - q2.px) * 0.3; } }   // on the floor: yarn grips (it is peeled up, not flung)
+          if (q2.y >= gy) { q2.y = gy; if (it === 0) { q2.py = gy; q2.px = q2.x - (q2.x - q2.px) * 0.1; } }   // on the floor: yarn grips and stays where it was laid (it is peeled up, not dragged)
         }
       }
     }
@@ -992,6 +999,7 @@
     R.rot = R.ha + ((P.paid || 0) - P.paid0) / R.r * 0.25;
   }
 
+  function yWave(c) { return 0.32 * (1 + Math.sin(c * 0.42 + 0.6)) + 0.18 * (1 + Math.sin(c * 1.13 + 2.1)); }   // a lying strand's slight natural kinks (px), measured from its free end
   function strandStyle() { ctx.strokeStyle = "rgba(" + YARN + ",.4)"; ctx.lineWidth = 0.9; ctx.lineJoin = "round"; }
   function drawStrand(R) {
     var s = R.s, i, P = R.rope;
@@ -1001,7 +1009,7 @@
       for (i = N.length - 1; i >= 0; i--) {
         if (i < N.length - 1) cum += Math.hypot(N[i].x - N[i + 1].x, N[i].y - N[i + 1].y);
         var on = clamp(1 - (R.g - 0.6 - N[i].y) / 1.5, 0, 1), wq = clamp((P.ev || 0) / 0.08, 0, 1) * Math.exp(-cum / (12 * s));
-        pts.push([X(N[i].x), N[i].y - 0.35 * (1 + Math.sin(cum * 0.11)) * on - wq * 0.7 * s * (0.5 + 0.5 * Math.sin(R.t * 0.018 + cum * 0.25))]);
+        pts.push([X(N[i].x), N[i].y - yWave(cum) * on - wq * 0.7 * s * (0.5 + 0.5 * Math.sin(R.t * 0.018 + cum * 0.25))]);
       }
       ctx.moveTo(pts[0][0], pts[0][1]);
       for (i = 1; i < pts.length - 1; i++) ctx.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
@@ -1014,7 +1022,7 @@
     var a = looseAt(R), T = R.ytail, cum = 0, Q = [], k;
     for (k = T.length - 1; k >= 0; k--) {   // lying on the ground it shows the same faint waviness as the dragged strand
       if (k < T.length - 1) cum += Math.hypot(T[k].x - T[k + 1].x, T[k].y - T[k + 1].y);
-      var on = clamp(1 - (R.g - 0.6 - T[k].y) / 1.5, 0, 1); Q.unshift([X(T[k].x), T[k].y - 0.35 * (1 + Math.sin(cum * 0.11)) * on]);
+      var on = clamp(1 - (R.g - 0.6 - T[k].y) / 1.5, 0, 1); Q.unshift([X(T[k].x), T[k].y - yWave(cum) * on]);
     }
     Q.unshift([X(a[0]), a[1]]);
     ctx.moveTo(Q[0][0], Q[0][1]);
