@@ -236,7 +236,7 @@
       reachP: P({ h: [-10.0, -12.0], s: [9.4, -11.4], arch: 0.3, scap: 0.7, neck: -0.3, head: 0.4, fl: [17.72, -6.38, 0.2], hl: [-11.0, -0.9, 0.95], hf: [-12.2, -0.7, 0.95], pl: [1, 0, 0, 0], toe: [-0.4, 0.4, 0, 0.4],
                       W: { 2: [56, 0.95, 0.6, 0.15] }, t: [PI - 0.05, 0.05, 0.08, 0.12, 0.16, 0.2] }),
       landCP: P({ h: [-10.2, -11.6], s: [7.0, -10.6], arch: 1.4, scap: 1.0, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-8.4, -1.0, 0.8], hf: [-9.8, -0.8, 0.8], pl: [1, 0, 1, 0],
-                      toe: [-0.4, 0.4, -0.2, 0.4], t: [PI + 0.15, 0.06, 0.1, 0.16, 0.24, 0.3] }),
+                      toe: [-0.4, 0.4, -0.2, 0.4], t: TL(0.3) }),
       landHP: P({ h: [-10.0, -10.8], s: [6.6, -10.8], arch: 1.3, scap: 1.0, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 0.95], hf: [-7.0, 0, 0.95], toe: [-0.4, 0, -0.2, 0], t: TL(0.35) }),
       // pin: the foreleg reaches out onto the ball (weight on it), head lowered over it
       pin: P({ h: [-10.2, -10.6], s: [6.2, -11.0], arch: 1.2, scap: 1.1, neck: -0.3, head: 0.5, fl: [17.72, -6.38, 0.4], ff: [14.78, -4.35, 0.6], hl: [-5.6, 0, 1.0], hf: [-7.0, 0, 1.0], toe: [-0.4, 0, -0.2, 0], t: TL(0.4) }),
@@ -787,7 +787,8 @@
     R.pv += (-w * w * R.pouch - 2 * 0.35 * w * R.pv - R.acc[1] * 0.8) * dt; R.pouch += R.pv * dt;
     var pz = 0.9 * Math.tanh(R.pouch / 0.9);
     var m = R.mode, t = R.mt, o = { blink: 0, ear: 0, pouch: 0.25 + pz, belly: 0.1 + pz * 0.35 };
-    o.tail = simTail(R, v, dt, R.acc);
+    var ka = m === "pounce" || m === "grab" ? 0.35 : 1;   // landing on the ball should not fling the tail up
+    o.tail = simTail(R, v, dt, [R.acc[0] * ka, R.acc[1] * ka]);
     if (m === "crouch") { o.ear = Math.max(0, Math.sin(Math.PI * clamp((t - 120) / 200, 0, 1))); }   // a stalking cat stares: no blink
     if (m === "grab") { o.ear = Math.max(0, Math.sin(Math.PI * clamp((t - 40) / 220, 0, 1))); }
     o.mouth = R.held ? Math.max(R.mouth * (1 - smooth((R.mt - BITE) / 60)) * (m === "grab" ? 1 : 0), 0.75 + 0.15 * R.rr / R.r) : R.mouth;   // jaws apart around the ball
