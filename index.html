@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tabineko</title>
+<meta name="description" content="tabineko">
+<meta name="theme-color" content="#0f0e12">
+<meta property="og:title" content="tabineko">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.tabineko.dev/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  :root { --ink: #0f0e12; --char: #17151b; --indigo: #3a4683; --indigo-2: #5563a8; --indigo-deep: #1d2244;
+          --amber: #e8a85a; --vermilion: #d65f3e; --paper: #efe8dc; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--ink); color: var(--paper); overflow: hidden; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+  .bg { position: fixed; inset: 0; overflow: hidden; z-index: 0; filter: blur(80px) saturate(110%); }
+  .blob { position: absolute; border-radius: 50%; will-change: transform; }
+  .b1 { width: 64vmax; height: 64vmax; left: -18vmax; top: -24vmax; opacity: .7;
+        background: radial-gradient(circle at 35% 35%, var(--indigo-2), var(--indigo) 50%, transparent 70%); animation: d1 34s ease-in-out infinite alternate; }
+  .b2 { width: 70vmax; height: 70vmax; right: -24vmax; bottom: -34vmax; opacity: .85;
+        background: radial-gradient(circle, var(--indigo-deep), #151830 60%, transparent 72%); animation: d2 40s ease-in-out infinite alternate; }
+  .b3 { width: 34vmax; height: 34vmax; right: 2vmax; top: 4vmax; opacity: .28;
+        background: radial-gradient(circle at 45% 45%, var(--amber), #b7773a 50%, transparent 70%); animation: d3 30s ease-in-out infinite alternate; }
+  .b4 { width: 26vmax; height: 26vmax; left: 12vmax; bottom: -6vmax; opacity: .18;
+        background: radial-gradient(circle, var(--vermilion), #8f3524 55%, transparent 72%); animation: d4 36s ease-in-out infinite alternate; }
+  @keyframes d1 { 0% { transform: translate(0,0) scale(1) rotate(0deg); border-radius: 50% 46% 54% 50%; } 100% { transform: translate(16vw,12vh) scale(1.12) rotate(30deg); border-radius: 44% 56% 47% 53%; } }
+  @keyframes d2 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(-14vw,-12vh) scale(1.08); } }
+  @keyframes d3 { 0% { transform: translate(0,0) scale(.95); } 100% { transform: translate(-18vw,16vh) scale(1.1); } }
+  @keyframes d4 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(16vw,-10vh) scale(1.15); } }
+  .vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, transparent 38%, rgba(6,5,8,.62) 100%); }
+  /* Network layer (and the occasional faint trail of paw prints), drawn by the script below */
+  #net { position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+  main { position: relative; z-index: 2; min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem; padding: 6vmin 6vw; text-align: center; }
+  h1 { margin: 0; font-weight: 300; letter-spacing: .01em; font-size: clamp(2.6rem, 11vw, 6.2rem); line-height: 1; position: relative; }
+  h1 span { font-weight: 400; font-size: .42em; letter-spacing: .06em; margin-left: .12em;
+            background: linear-gradient(90deg, var(--amber), var(--vermilion)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  /* Tiny line-art cat sitting on the wordmark's shoulder */
+  .cat { position: absolute; width: .3em; height: .3em; right: .02em; top: .06em; color: var(--amber); opacity: .55; }
+  p { margin: 0; font-size: clamp(.95rem, 2.6vw, 1.1rem); letter-spacing: .03em; color: rgba(239,232,220,.66); }
+  @media (prefers-reduced-motion: reduce) { .blob { animation: none; } }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
+<div class="vignette" aria-hidden="true"></div>
+<canvas id="net" aria-hidden="true"></canvas>
+<main>
+  <h1>tabineko<span>.dev</span><svg class="cat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 10V4.5l2.4 2h3.2l2.4-2V10c0 1.6-.8 2.6-2 3.1 2.6.9 3.9 3.2 3.9 7.4H5.6c0-4.2 1.3-6.5 3.9-7.4-1.2-.5-2-1.5-2-3.1z"/><path d="M17.4 20.5c2.2 0 3.3-1.4 3-3.4"/></svg></h1>
+  <p>Something is taking shape.</p>
+</main>
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("net");
+  var ctx = canvas.getContext && canvas.getContext("2d");
+  if (!ctx) return;
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var PAPER = [239, 232, 220], AMBER = [232, 168, 90], INDIGO = [150, 162, 230];
+  var nodes = [], pulses = [], W = 0, H = 0, dpr = 1, linkDist = 160, raf = 0, last = 0, clock = 0;
+  var trail = null, nextTrail = 9000 + Math.random() * 8000;
+
+  function setup() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    linkDist = Math.max(120, Math.min(200, Math.sqrt(W * H) / 5.2));
+    // Node count scales with screen area: ~14 on a phone, capped at 44 on large screens
+    var target = Math.round(Math.max(14, Math.min(44, W * H / 30000)));
+    while (nodes.length < target) nodes.push(makeNode());
+    nodes.length = target;
+    nodes.forEach(function (n) { n.x = Math.min(n.x, W); n.y = Math.min(n.y, H); });
+  }
+  function makeNode() {
+    var a = Math.random() * Math.PI * 2, sp = 0.003 + Math.random() * 0.006;   // px per ms (very slow)
+    var r = Math.random();
+    return { x: Math.random() * W, y: Math.random() * H, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+             r: 1 + Math.random() * 1.2, c: r < 0.5 ? PAPER : r < 0.82 ? INDIGO : AMBER, ph: Math.random() * 6.28 };
+  }
+  function rgba(c, a) { return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a.toFixed(3) + ")"; }
+
+  // A faint trail of paw prints along a gentle curve, now and then (a cat on a journey)
+  function makeTrail() {
+    var top = Math.random() < 0.5, ltr = Math.random() < 0.5;
+    var y0 = H * (top ? 0.12 + Math.random() * 0.14 : 0.74 + Math.random() * 0.14);
+    var y3 = y0 + (Math.random() - 0.5) * H * 0.12;
+    var p0 = { x: ltr ? -20 : W + 20, y: y0 }, p3 = { x: ltr ? W + 20 : -20, y: y3 };
+    var p1 = { x: W * (ltr ? 0.33 : 0.67), y: y0 + (Math.random() - 0.5) * H * 0.18 };
+    var p2 = { x: W * (ltr ? 0.66 : 0.34), y: y3 + (Math.random() - 0.5) * H * 0.18 };
+    var prints = [], step = 26, len = 0, prev = bez(p0, p1, p2, p3, 0), side = 1;
+    for (var i = 1; i <= 400; i++) {
+      var t = i / 400, p = bez(p0, p1, p2, p3, t), d = Math.hypot(p.x - prev.x, p.y - prev.y);
+      len += d;
+      if (len >= step) {
+        len = 0;
+        var ang = Math.atan2(p.y - prev.y, p.x - prev.x);
+        prints.push({ x: p.x + Math.cos(ang + Math.PI / 2) * 5 * side, y: p.y + Math.sin(ang + Math.PI / 2) * 5 * side, a: ang });
+        side = -side;
+      }
+      prev = p;
+    }
+    return { prints: prints, t: 0, gap: 260 };   // a new print every 260 ms
+  }
+  function bez(a, b, c, d, t) {
+    var u = 1 - t;
+    return { x: u*u*u*a.x + 3*u*u*t*b.x + 3*u*t*t*c.x + t*t*t*d.x, y: u*u*u*a.y + 3*u*u*t*b.y + 3*u*t*t*c.y + t*t*t*d.y };
+  }
+  function drawPaw(x, y, ang, alpha) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang + Math.PI / 2);
+    ctx.fillStyle = rgba(AMBER, alpha);
+    ctx.beginPath(); ctx.ellipse(0, 1.6, 2.2, 1.8, 0, 0, 6.2832); ctx.fill();
+    var toes = [[-2.4, -1.4], [-0.8, -2.8], [0.8, -2.8], [2.4, -1.4]];
+    for (var i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(toes[i][0], toes[i][1], 0.75, 0.95, 0, 0, 6.2832); ctx.fill(); }
+    ctx.restore();
+  }
+
+  function step(dt) {
+    clock += dt;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      n.x += n.vx * dt; n.y += n.vy * dt;
+      if (n.x < -20) n.x = W + 20; else if (n.x > W + 20) n.x = -20;
+      if (n.y < -20) n.y = H + 20; else if (n.y > H + 20) n.y = -20;
+      n.ph += dt * 0.0007;
+    }
+    if (pulses.length < 2 && Math.random() < dt / 3600) {
+      var a = nodes[(Math.random() * nodes.length) | 0], best = null, bd = linkDist;
+      for (var j = 0; j < nodes.length; j++) {
+        var b = nodes[j]; if (b === a) continue;
+        var dd = Math.hypot(a.x - b.x, a.y - b.y); if (dd < bd) { bd = dd; best = b; }
+      }
+      if (best) pulses.push({ a: a, b: best, t: 0 });
+    }
+    for (var k = pulses.length - 1; k >= 0; k--) { pulses[k].t += dt / 2000; if (pulses[k].t >= 1) pulses.splice(k, 1); }
+    if (!trail && clock > nextTrail) trail = makeTrail();
+    if (trail) {
+      trail.t += dt;
+      if (trail.t > trail.prints.length * trail.gap + 5000) { trail = null; nextTrail = clock + 35000 + Math.random() * 30000; }
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineWidth = 0.7;
+    for (var i = 0; i < nodes.length; i++) {
+      var a = nodes[i];
+      for (var j = i + 1; j < nodes.length; j++) {
+        var b = nodes[j], dx = a.x - b.x, dy = a.y - b.y;
+        if (Math.abs(dx) > linkDist || Math.abs(dy) > linkDist) continue;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < linkDist) {
+          var t = 1 - d / linkDist, alpha = t * t * 0.3;
+          var g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+          g.addColorStop(0, rgba(a.c, alpha)); g.addColorStop(1, rgba(b.c, alpha));
+          ctx.strokeStyle = g;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+    }
+    for (var k = 0; k < nodes.length; k++) {
+      var n = nodes[k];
+      ctx.fillStyle = rgba(n.c, 0.5 + 0.2 * Math.sin(n.ph));
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.2832); ctx.fill();
+    }
+    for (var p = 0; p < pulses.length; p++) {
+      var q = pulses[p], x = q.a.x + (q.b.x - q.a.x) * q.t, y = q.a.y + (q.b.y - q.a.y) * q.t;
+      var rg = ctx.createRadialGradient(x, y, 0, x, y, 6);
+      rg.addColorStop(0, rgba([255, 228, 190], Math.sin(q.t * Math.PI) * 0.55)); rg.addColorStop(1, rgba(AMBER, 0));
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, 6, 0, 6.2832); ctx.fill();
+    }
+    if (trail) {
+      for (var m = 0; m < trail.prints.length; m++) {
+        var age = trail.t - m * trail.gap;        // each print fades in, lingers, then fades out
+        if (age <= 0) break;
+        var al = age < 600 ? age / 600 : age < 2600 ? 1 : Math.max(0, 1 - (age - 2600) / 2400);
+        if (al > 0) drawPaw(trail.prints[m].x, trail.prints[m].y, trail.prints[m].a, al * 0.2);
+      }
+    }
+  }
+
+  function frame(now) {
+    var dt = last ? Math.min(now - last, 64) : 16; last = now;
+    step(dt); draw();
+    raf = requestAnimationFrame(frame);
+  }
+  function start() { if (!raf && !reduce && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
+  function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+
+  setup(); draw();   // reduced motion: this single static frame is all that is drawn
+  var resizeT = 0;
+  window.addEventListener("resize", function () { clearTimeout(resizeT); resizeT = setTimeout(function () { setup(); draw(); }, 150); });
+  document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
+  start();
+  // Test hook: ?trail=1 starts a paw-print trail right away
+  if (/[?&]trail=1\b/.test(location.search)) nextTrail = 300;
+})();
+</script>
+</body>
+</html>
